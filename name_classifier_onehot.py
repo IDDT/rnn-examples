@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 
 #GPU ready classifier with large batch using packed sequence.
+#RNN on one-hot encoded char vectors.
 
 
 
@@ -17,7 +18,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 
-#Load data.
+#%% Load data.
 def to_ascii(s):
     out = []
     for char in unicodedata.normalize('NFD', s):
@@ -46,7 +47,7 @@ def make_input_vect(name):
 
 
 
-#Make X, y
+#%% Make X, y
 batch_size = len(names)
 input_size = len(char_to_ix)
 output_size = len(cate_to_ix)
