@@ -37,7 +37,7 @@ for filename in os.listdir('data/names'):
                 names.append(normalize_string(line))
                 categories.append(category)
 
-rand_idx = np.random.permutation(len(names))
+rand_idx = np.random.RandomState(seed=0).permutation(len(names))
 names = np.array(names)[rand_idx.tolist()]
 categories = np.array(categories)[rand_idx]
 
@@ -53,14 +53,14 @@ categories, categories_t = categories[0:-n_test], categories[-n_test:]
 
 
 
-#Make X, y
+#Make X, y.
 seq_len = max([len(name) for name in names])
 input_size = len(char_to_ix)
 output_size = len(cate_to_ix)
 
 def make_input_vectors(texts, char_to_ix, seq_len):
     #for each sequence
-    #   for for each feature
+    #   for each feature
     #       for each timestep
     arr = torch.zeros(len(texts), len(char_to_ix), seq_len,
         dtype=torch.float32, device=device, requires_grad=False)
@@ -129,6 +129,7 @@ class Conv1dClassifier(nn.Module):
 batch_size, input_size, seq_len = X.shape
 model = Conv1dClassifier(seq_len, input_size, output_size).to(device)
 loss_fn = nn.NLLLoss(weight=weights, reduction='mean')
+loss_fn_test = nn.NLLLoss(reduction='mean')
 optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
 max_unimproved_epochs, unimproved_epochs = 50, 0
@@ -146,11 +147,7 @@ for epoch in range(1001):
     #Testing.
     model.eval()
     y_pred = model(X_t)
-    loss = loss_fn(y_pred, y_t)
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-    loss_test = loss.item()
+    loss_test = loss_fn_test(y_pred, y_t).item()
     #Feedback.
     if epoch % 10 == 0:
         print(f'E {epoch} TRAIN: {loss_train:.3f} TEST: {loss_test:.3f}')
