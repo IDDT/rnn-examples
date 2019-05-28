@@ -1,27 +1,29 @@
 import os
+import time
 import unicodedata
 import string
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 
-#GPU ready classifier with large batch using packed sequence.
+#GPU ready classifier with large batch.
 #1D CNN on one-hot encoded char vectors.
 
 
 
-ALL_CHARS = string.ascii_letters + " .,;'"
-N_CHARS = len(ALL_CHARS)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 
-#Load data.
-def to_ascii(s):
+#%% Load data.
+ALL_CHARS = string.ascii_letters + " .,;'"
+
+def normalize_string(string):
     out = []
-    for char in unicodedata.normalize('NFD', s):
+    for char in unicodedata.normalize('NFD', string.strip()):
         if unicodedata.category(char) != 'Mn' and char in ALL_CHARS:
             out.append(char)
     return ''.join(out)
@@ -32,28 +34,48 @@ for filename in os.listdir('data/names'):
     if filename.endswith('.txt'):
         with open('data/names/' + filename) as f:
             for line in f:
-                names.append(to_ascii(line.strip()))
+                names.append(normalize_string(line))
                 categories.append(category)
+
+rand_idx = np.random.permutation(len(names))
+names = np.array(names)[rand_idx.tolist()]
+categories = np.array(categories)[rand_idx]
 
 char_to_ix = {x: i for i, x in enumerate(ALL_CHARS)}
 cate_to_ix = {x: i for i, x in enumerate(set(categories))}
 
 
 
+#%% Split into train and test.
+n_test = len(names) // 10
+names, names_t = names[0:-n_test], names[-n_test:]
+categories, categories_t = categories[0:-n_test], categories[-n_test:]
+
+
+
 #Make X, y
-batch_size = len(names)
 seq_len = max([len(name) for name in names])
 input_size = len(char_to_ix)
 output_size = len(cate_to_ix)
 
-X = torch.zeros(batch_size, input_size, seq_len,
-    dtype=torch.float32, device=device, requires_grad=False)
-y = torch.tensor([cate_to_ix[category] for category in categories],
+def make_input_vectors(texts, char_to_ix, seq_len):
+    #for each sequence
+    #   for for each feature
+    #       for each timestep
+    arr = torch.zeros(len(texts), len(char_to_ix), seq_len,
+        dtype=torch.float32, device=device, requires_grad=False)
+    for t, text in enumerate(texts):
+        for c, char in enumerate(text):
+            ix = char_to_ix[char]
+            arr[t][ix][c] = 1
+    return arr
+
+X = make_input_vectors(names, char_to_ix, seq_len)
+y = torch.tensor([cate_to_ix[x] for x in categories],
     dtype=torch.int64, device=device, requires_grad=False)
-for n, name in enumerate(names):
-    for c, char in enumerate(name):
-        ix = char_to_ix[char]
-        X[n][ix][c] = 1
+X_t = make_input_vectors(names_t, char_to_ix, seq_len)
+y_t = torch.tensor([cate_to_ix[x] for x in categories_t],
+    dtype=torch.int64, device=device, requires_grad=False)
 
 
 
@@ -105,34 +127,51 @@ class Conv1dClassifier(nn.Module):
 
 #%% Training.
 batch_size, input_size, seq_len = X.shape
-model = Conv1dClassifier(seq_len, input_size, output_size)
-if torch.cuda.is_available():
-    model.cuda()
+model = Conv1dClassifier(seq_len, input_size, output_size).to(device)
 loss_fn = nn.NLLLoss(weight=weights, reduction='mean')
-#optimizer = torch.optim.SGD(model.parameters(), lr=5)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 
-for t in range(251):
+max_unimproved_epochs, unimproved_epochs = 50, 0
+loss_min = np.inf
+start_time = time.time()
+for epoch in range(1001):
+    #Training.
+    model.train()
     y_pred = model(X)
     loss = loss_fn(y_pred, y)
-    if t % 10 == 0:
-        print(loss.item())
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
+    loss_train = loss.item()
+    #Testing.
+    model.eval()
+    y_pred = model(X_t)
+    loss = loss_fn(y_pred, y_t)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+    loss_test = loss.item()
+    #Feedback.
+    if epoch % 10 == 0:
+        print(f'E {epoch} TRAIN: {loss_train:.3f} TEST: {loss_test:.3f}')
+    #Early stopping.
+    unimproved_epochs += 1
+    if loss_test < loss_min:
+        loss_min = loss_test
+        unimproved_epochs = 0
+    if unimproved_epochs > max_unimproved_epochs:
+        minutes_took = (time.time() - start_time) / 60
+        print(f'E {epoch} Early stopping. BEST TEST: {loss_min:.3f}')
+        print(f'Took: {minutes_took:.1f}m')
+        break
 
 
 
 #%% Predict.
 ix_to_cate = {ix: cate for cate, ix in cate_to_ix.items()}
-with torch.no_grad():
-    X_t = torch.zeros(1, input_size, seq_len,
-        dtype=torch.float32, device=device, requires_grad=False)
-    for c, char in enumerate('Xiao'):
-        ix = char_to_ix[char]
-        X_t[0][ix][c] = 1
-    y_pred = model(X_t).reshape(-1)
-    values, indexes = torch.exp(y_pred).topk(5)
-    for i in range(len(values)):
-        value, index = values[i].item(), indexes[i].item()
-        print(round(value, 2), '% -', ix_to_cate[index])
+model.eval()
+y_pred = model(make_input_vectors(['Xiao'], char_to_ix, seq_len)).reshape(-1)
+values, indexes = torch.exp(y_pred).topk(5)
+for i in range(len(values)):
+    value, index = values[i].item(), indexes[i].item()
+    print(f'{value * 100:.1f}% - {ix_to_cate[index]}')
