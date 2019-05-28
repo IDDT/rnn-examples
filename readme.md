@@ -5,9 +5,9 @@ Every script is GPU optimized unless it has "cpu" in its filename.
 
 
 #### Name classifiers.
-1. `name_classifier_onehot.py` - Classify names using one hot encoded characters.
-2. `name_classifier_embedding.py` - The same thing, but using dense vectors with "embedding" layer.
-3. `name_classifier_cnn_onehot.py` - Classify names using one hot encoded vectors with 1D CNN.
+1. `name_classifier_rnn_onehot.py` - Classify names using rnn with one hot encoded characters.
+2. `name_classifier_rnn_embedding.py` - Classify names using rnn with dense embeddings.
+3. `name_classifier_cnn_onehot.py` - Classify names using conv1d with one hot encoded characters.
 
 #### Name generators.
 1. `name_generator_cpu.py` - Implementation learning data char by char, resembling implementation in the PyTorch tutorial.
