@@ -166,8 +166,9 @@ for epoch in range(1001):
 #%% Predict.
 ix_to_cate = {ix: cate for cate, ix in cate_to_ix.items()}
 model.eval()
-y_pred = model(make_input_vect('Xiao')).reshape(1, -1, len(char_to_ix))
+y_pred = model(make_input_vect('Xiao').reshape(1, -1, len(char_to_ix)))
 values, indexes = torch.exp(y_pred).topk(5)
+values, indexes = values.reshape(-1), indexes.reshape(-1)
 for i in range(len(values)):
     value, index = values[i].item(), indexes[i].item()
     print(f'{value * 100:.1f}% - {ix_to_cate[index]}')
