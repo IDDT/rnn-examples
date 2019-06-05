@@ -87,15 +87,14 @@ y_t = torch.tensor([cate_to_ix[x] for x in categories_t],
 
 #%% Make category weights.
 counts = {}
-for target in y:
+for target in y_t:
     target = target.item()
     if target not in counts:
         counts[target] = 0
     counts[target] += 1
 weights = torch.tensor([counts.get(i, 0) for i in range(len(cate_to_ix))],
     dtype=torch.float32, device=device, requires_grad=False)
-min_weight = weights[weights > 0].min()
-weights = min_weight / weights.clamp(min=min_weight)
+weights = weights.max() / weights
 
 
 
@@ -107,7 +106,7 @@ class RNNClassifier(nn.Module):
         self.rnn = nn.RNN(input_size, hidden_size,
             num_layers=1, nonlinearity='tanh', bias=True,
             batch_first=True, dropout=0, bidirectional=False)
-        self.lin1 = nn.Linear(hidden_size, output_size)
+        self.lin = nn.Linear(hidden_size, output_size)
     def forward(self, x):
         if type(x) is nn.utils.rnn.PackedSequence:
             batch_size = x.batch_sizes[0].item()
@@ -115,21 +114,20 @@ class RNNClassifier(nn.Module):
             batch_size = x.shape[0]
         else:
             ValueError('Unknown input type.')
-        #batch, seq_len = x.shape[0], x.shape[1]
-        h0 = torch.zeros(1, batch_size, self.hidden_size,
+        h = torch.zeros(1, batch_size, self.hidden_size,
             dtype=torch.float32, device=device, requires_grad=True)
-        output, h0 = self.rnn(x, h0)
-        x = self.lin1(F.relu(h0.reshape(-1, self.hidden_size)))
-        return F.log_softmax(x, dim=1)
+        _, h = self.rnn(x, h)
+        h = self.lin(F.relu(h.reshape(-1, self.hidden_size)))
+        return F.log_softmax(h, dim=1)
 
 
 
 #%% Training.
-hidden_size = 128
+hidden_size = 64
 model = RNNClassifier(input_size, hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(weight=weights, reduction='mean')
 loss_fn_test = nn.NLLLoss(reduction='mean')
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 max_unimproved_epochs, unimproved_epochs = 50, 0
 loss_min = np.inf

@@ -82,15 +82,14 @@ yt = torch.tensor([cate_to_ix[x] for x in categories_t],
 
 #%% Make category weights.
 counts = {}
-for target in y:
+for target in y_t:
     target = target.item()
     if target not in counts:
         counts[target] = 0
     counts[target] += 1
 weights = torch.tensor([counts.get(i, 0) for i in range(len(cate_to_ix))],
     dtype=torch.float32, device=device, requires_grad=False)
-min_weight = weights[weights > 0].min()
-weights = min_weight / weights.clamp(min=min_weight)
+weights = weights.max() / weights
 
 
 
@@ -119,7 +118,7 @@ class RNNClassifier(nn.Module):
 
 #%% Training.
 embedding_size = 24
-hidden_size = 128
+hidden_size = 64
 model = RNNClassifier(input_size, embedding_size, hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(weight=weights, reduction='mean')
 loss_fn_test = nn.NLLLoss(reduction='mean')
