@@ -103,9 +103,7 @@ class RNNClassifier(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(RNNClassifier, self).__init__()
         self.hidden_size = hidden_size
-        self.rnn = nn.RNN(input_size, hidden_size,
-            num_layers=1, nonlinearity='tanh', bias=True,
-            batch_first=True, dropout=0, bidirectional=False)
+        self.rnn = nn.RNN(input_size, hidden_size, batch_first=True)
         self.lin = nn.Linear(hidden_size, output_size)
     def forward(self, x):
         if type(x) is nn.utils.rnn.PackedSequence:
@@ -127,7 +125,7 @@ hidden_size = 64
 model = RNNClassifier(input_size, hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(weight=weights, reduction='mean')
 loss_fn_test = nn.NLLLoss(reduction='mean')
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
 max_unimproved_epochs, unimproved_epochs = 50, 0
 loss_min = np.inf

@@ -55,8 +55,7 @@ categories, categories_t = categories[0:-n_test], categories[-n_test:]
 
 #Make X, y.
 seq_len = max([len(name) for name in names])
-input_size = len(char_to_ix)
-output_size = len(cate_to_ix)
+input_size, output_size = len(char_to_ix), len(cate_to_ix)
 
 def make_input_vectors(texts, char_to_ix, seq_len):
     #for each sequence
@@ -93,43 +92,33 @@ weights = weights.max() / weights
 
 
 #%% Model.
-class Conv1dClassifier(nn.Module):
+class CNNClassifier(nn.Module):
     def __init__(self, seq_len, input_size, output_size):
-        super(Conv1dClassifier, self).__init__()
-        #6 convolutions. 2 of each.
-        kernel_size = 5
-        self.conv_a0 = torch.nn.Conv1d(input_size, 1, kernel_size)
-        self.conv_a1 = torch.nn.Conv1d(input_size, 1, kernel_size)
-        kernel_size = 4
-        self.conv_b0 = torch.nn.Conv1d(input_size, 1, kernel_size)
-        self.conv_b1 = torch.nn.Conv1d(input_size, 1, kernel_size)
-        kernel_size = 3
-        self.conv_c0 = torch.nn.Conv1d(input_size, 1, kernel_size)
-        self.conv_c1 = torch.nn.Conv1d(input_size, 1, kernel_size)
+        super(CNNClassifier, self).__init__()
+        self.conv_a = torch.nn.Conv1d(input_size, 20, 5)
+        self.conv_b = torch.nn.Conv1d(input_size, 20, 4)
+        self.conv_c = torch.nn.Conv1d(input_size, 20, 3)
         #Max value from all outputs.
-        self.lin1 = nn.Linear(6, output_size)
+        self.lin = nn.Linear(60, output_size)
     def forward(self, x):
         #batch, n_channels, seq_len, input_size = x.shape
         batch_size = x.shape[0]
         x = torch.cat((
-            self.conv_a0(x).max(dim=2)[0].reshape(batch_size, -1),
-            self.conv_a1(x).max(dim=2)[0].reshape(batch_size, -1),
-            self.conv_b0(x).max(dim=2)[0].reshape(batch_size, -1),
-            self.conv_b1(x).max(dim=2)[0].reshape(batch_size, -1),
-            self.conv_c0(x).max(dim=2)[0].reshape(batch_size, -1),
-            self.conv_c1(x).max(dim=2)[0].reshape(batch_size, -1)
+            self.conv_a(x).max(dim=2)[0],
+            self.conv_b(x).max(dim=2)[0],
+            self.conv_c(x).max(dim=2)[0]
         ), dim=1)
-        x = self.lin1(F.relu(x))
+        x = self.lin(F.relu(x))
         return F.log_softmax(x, dim=1)
 
 
 
 #%% Training.
 batch_size, input_size, seq_len = X.shape
-model = Conv1dClassifier(seq_len, input_size, output_size).to(device)
+model = CNNClassifier(seq_len, input_size, output_size).to(device)
 loss_fn = nn.NLLLoss(weight=weights, reduction='mean')
 loss_fn_test = nn.NLLLoss(reduction='mean')
-optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
 max_unimproved_epochs, unimproved_epochs = 50, 0
 loss_min = np.inf
