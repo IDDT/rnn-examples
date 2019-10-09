@@ -175,7 +175,7 @@ class Decoder(nn.Module):
 
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
-hidden_size = 100
+hidden_size = 500
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
@@ -229,10 +229,10 @@ for epoch in range(1001):
     #Save state & early stopping.
     unimproved_epochs += 1
     if loss_test < loss_min:
-        torch.save(encoder.state_dict(), 'encoder.state')
-        torch.save(decoder.state_dict(), 'decoder.state')
-        torch.save(optim_enc.state_dict(), 'optim_enc.state')
-        torch.save(optim_dec.state_dict(), 'optim_dec.state')
+        torch.save(encoder.state_dict(), 'models/encoder.state')
+        torch.save(decoder.state_dict(), 'models/decoder.state')
+        torch.save(optim_enc.state_dict(), 'models/optim_enc.state')
+        torch.save(optim_dec.state_dict(), 'models/optim_dec.state')
         loss_min = loss_test
         unimproved_epochs = 0
     if unimproved_epochs > max_unimproved_epochs:
