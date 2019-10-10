@@ -164,9 +164,9 @@ class Decoder(nn.Module):
 
     def predict(self, h, x):
         #Output and hidden are the same if seq_len = 1.
-        _, hidden = self.rnn(x, hidden)
-        probas = F.softmax(self.lin(hidden), dim=2)
-        return probas, hidden
+        _, h = self.rnn(x, h)
+        probas = F.softmax(self.lin(h), dim=2)
+        return probas, h
 
 
 input_size = len(char_to_ix_l1)
@@ -249,12 +249,12 @@ def greedy_decode(hidden, max_length=100):
     #Predicting.
     while len(out) < max_length:
         #Make char vector.
-        char_ix = char_to_ix_l1[out[i]]
+        char_ix = char_to_ix_l2[out[i]]
         char_vect = torch.zeros(1, 1, len(char_to_ix_l2),
             dtype=torch.float32, device=device, requires_grad=False)
         char_vect[0][0][char_ix] = 1
         #Run prediction.
-        probas, hidden = decoder.predict(char_vect, hidden)
+        probas, hidden = decoder.predict(hidden, char_vect)
         #Add prediction if last char.
         if i == len(out) - 1:
             topv, topi = probas.topk(1)

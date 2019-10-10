@@ -164,9 +164,9 @@ class Decoder(nn.Module):
 
     def predict(self, h, x):
         #Output and hidden are the same if seq_len = 1.
-        _, hidden = self.rnn(x, hidden)
-        probas = F.softmax(self.lin(hidden), dim=2)
-        return probas, hidden
+        _, hidden = self.rnn(x, h)
+        probas = F.softmax(self.lin(h), dim=2)
+        return probas, h
 
 
 input_size = len(char_to_ix_l1)
@@ -177,10 +177,10 @@ decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
 optim_enc = torch.optim.Adam(encoder.parameters(), lr=0.001)
 optim_dec = torch.optim.Adam(decoder.parameters(), lr=0.001)
-# encoder.load_state_dict(torch.load('models/encoder.state', map_location=device))
-# decoder.load_state_dict(torch.load('models/decoder.state', map_location=device))
-# optim_enc.load_state_dict(torch.load('models/optim_enc.state', map_location=device))
-# optim_dec.load_state_dict(torch.load('models/optim_dec.state', map_location=device))
+encoder.load_state_dict(torch.load('models/encoder.state', map_location=device))
+decoder.load_state_dict(torch.load('models/decoder.state', map_location=device))
+optim_enc.load_state_dict(torch.load('models/optim_enc.state', map_location=device))
+optim_dec.load_state_dict(torch.load('models/optim_dec.state', map_location=device))
 
 
 
@@ -267,38 +267,41 @@ for epoch in range(1001):
 
 
 #Sample.
-# encoder.eval()
-# decoder.eval()
-#
-# ix_to_char_l2 = {value: key for key, value in char_to_ix_l2.items()}
-#
-# def greedy_decode(hidden, max_length=100):
-#     out = '<'
-#     i = 0
-#     #Predicting.
-#     while len(out) < max_length:
-#         #Make char vector.
-#         char_ix = char_to_ix_l1[out[i]]
-#         char_vect = torch.zeros(1, 1, len(char_to_ix_l2),
-#             dtype=torch.float32, device=device, requires_grad=False)
-#         char_vect[0][0][char_ix] = 1
-#         #Run prediction.
-#         probas, hidden = decoder.predict(hidden, char_vect)
-#         #Add prediction if last char.
-#         if i == len(out) - 1:
-#             topv, topi = probas.topk(1)
-#             char = ix_to_char_l2[topi[0].item()]
-#             out += char
-#             if char == CHAR_END:
-#                 break
-#         i += 1
-#     return out
-#
-#
-#
-#
-# l1, l2 = dataset[torch.randint(len(dataset), (1,)).item()]
-# print(l1, l2)
-# Xi = make_input_vect(l1, char_to_ix_l1, incl_last_char=True).unsqueeze(0).to(device)
-# h = encoder(Xi)
-# greedy_decode(h, max_length=100)
+encoder.eval()
+decoder.eval()
+
+ix_to_char_l2 = {value: key for key, value in char_to_ix_l2.items()}
+
+def greedy_decode(hidden, max_length=100):
+    hidden_original = hidden.clone()
+    out = '<'
+    i = 0
+    #Predicting.
+    while len(out) < max_length:
+        #Make char vector.
+        char_ix = char_to_ix_l2[out[i]]
+        char_vect = torch.zeros(1, 1, len(char_to_ix_l2),
+            dtype=torch.float32, device=device, requires_grad=False)
+        char_vect[0][0][char_ix] = 1
+        char_vect = torch.cat((char_vect, hidden_original), dim=2)
+        #Run prediction.
+        probas, hidden = decoder.predict(hidden, char_vect)
+        #Add prediction if last char.
+        if i == len(out) - 1:
+            topv, topi = probas.topk(1)
+            char = ix_to_char_l2[topi[0].item()]
+            out += char
+            if char == CHAR_END:
+                break
+        i += 1
+    return out
+
+char_vect.shape
+torch.cat((char_vect, h), dim=2).shape
+
+
+l1, l2 = dataset[torch.randint(len(dataset), (1,)).item()]
+print(l1, l2)
+Xi = make_input_vect(l1, char_to_ix_l1, incl_last_char=True).unsqueeze(0).to(device)
+h = encoder(Xi)
+greedy_decode(h, max_length=100)
