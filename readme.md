@@ -16,3 +16,6 @@ Replace nn.RNN with nn.GRU to get LSTM like performance. Keep in mind LSTM requi
 2. `name_generator_cpu_optimized.py` - Optimization of previous algorithm, learning from the whole name at once.
 3. `name_generator.py` - GPU batched algorithm taking name prefixes and matching it with the next letter. Easy to understand implementation.
 4. `name_generator_optimized.py` - Uses targets that are mapped to a packed sequence input. Uses less samples, therefore is faster and memory efficient.
+
+#### Sentence translators.
+1. `seq2seq_minibatch_forced_onehot.py` - Encoder-decoder with teacher forcing using one-hot encoded vectors.

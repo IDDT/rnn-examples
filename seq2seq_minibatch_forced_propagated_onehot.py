@@ -149,7 +149,7 @@ class Decoder(nn.Module):
     def __init__(self, hidden_size, output_size):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
-        self.rnn = nn.GRU(output_size, hidden_size, batch_first=True)
+        self.rnn = nn.GRU(output_size + hidden_size, hidden_size, batch_first=True)
         self.lin = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
@@ -183,6 +183,7 @@ optim_dec = torch.optim.Adam(decoder.parameters(), lr=0.001)
 # optim_dec.load_state_dict(torch.load('models/optim_dec.state', map_location=device))
 
 
+
 #%% Training.
 max_unimproved_epochs, unimproved_epochs = 15, 0
 loss_min = float('inf')
@@ -196,8 +197,22 @@ for epoch in range(1001):
         #Workaround for bug in pytorch==1.2.
         #Xi, X, y = Xi.to(device), X.to(device), y.to(device)
         Xi, X, y = Xi.to(device=device), X.to(device=device), y.to(device)
+        #Encode.
         h = encoder(Xi)
+        #Add hidden states to according inputs.
+        h = h.squeeze(0)
+        data = []
+        for i, size in enumerate(X.batch_sizes):
+            beg_ix = X.batch_sizes[0:i].sum().item()
+            end_ix = beg_ix + size.item()
+            data.append(torch.cat((X.data[beg_ix:end_ix], h[0:size.item()]), dim=1))
+        data = torch.cat(data, dim=0)
+        X = nn.utils.rnn.PackedSequence(data, batch_sizes=X.batch_sizes,
+            sorted_indices=X.sorted_indices, unsorted_indices=X.unsorted_indices)
+        h = h.unsqueeze(0)
+        #Decode.
         y_pred = decoder(h, X)
+        #Calc loss.
         loss = loss_fn(y_pred, y)
         optim_enc.zero_grad()
         optim_dec.zero_grad()
@@ -215,8 +230,22 @@ for epoch in range(1001):
             #Workaround for bug in pytorch==1.2.
             #Xi, X, y = Xi.to(device), X.to(device), y.to(device)
             Xi, X, y = Xi.to(device=device), X.to(device=device), y.to(device)
+            #Encode.
             h = encoder(Xi)
+            #Add hidden states to according inputs.
+            h = h.squeeze(0)
+            data = []
+            for i, size in enumerate(X.batch_sizes):
+                beg_ix = X.batch_sizes[0:i].sum().item()
+                end_ix = beg_ix + size.item()
+                data.append(torch.cat((X.data[beg_ix:end_ix], h[0:size.item()]), dim=1))
+            data = torch.cat(data, dim=0)
+            X = nn.utils.rnn.PackedSequence(data, batch_sizes=X.batch_sizes,
+                sorted_indices=X.sorted_indices, unsorted_indices=X.unsorted_indices)
+            h = h.unsqueeze(0)
+            #Decode.
             y_pred = decoder(h, X)
+            #Calc loss.
             losses.append(loss_fn(y_pred, y).item())
     loss_test = torch.tensor(losses, dtype=torch.float64).mean().item()
     #Feedback.
@@ -238,38 +267,38 @@ for epoch in range(1001):
 
 
 #Sample.
-encoder.eval()
-decoder.eval()
-
-ix_to_char_l2 = {value: key for key, value in char_to_ix_l2.items()}
-
-def greedy_decode(hidden, max_length=100):
-    out = '<'
-    i = 0
-    #Predicting.
-    while len(out) < max_length:
-        #Make char vector.
-        char_ix = char_to_ix_l1[out[i]]
-        char_vect = torch.zeros(1, 1, len(char_to_ix_l2),
-            dtype=torch.float32, device=device, requires_grad=False)
-        char_vect[0][0][char_ix] = 1
-        #Run prediction.
-        probas, hidden = decoder.predict(char_vect, hidden)
-        #Add prediction if last char.
-        if i == len(out) - 1:
-            topv, topi = probas.topk(1)
-            char = ix_to_char_l2[topi[0].item()]
-            out += char
-            if char == CHAR_END:
-                break
-        i += 1
-    return out
-
-
-
-
-l1, l2 = dataset[torch.randint(len(dataset), (1,)).item()]
-print(l1, l2)
-Xi = make_input_vect(l1, char_to_ix_l1, incl_last_char=True).unsqueeze(0).to(device)
-h = encoder(Xi)
-greedy_decode(h, max_length=100)
+# encoder.eval()
+# decoder.eval()
+#
+# ix_to_char_l2 = {value: key for key, value in char_to_ix_l2.items()}
+#
+# def greedy_decode(hidden, max_length=100):
+#     out = '<'
+#     i = 0
+#     #Predicting.
+#     while len(out) < max_length:
+#         #Make char vector.
+#         char_ix = char_to_ix_l1[out[i]]
+#         char_vect = torch.zeros(1, 1, len(char_to_ix_l2),
+#             dtype=torch.float32, device=device, requires_grad=False)
+#         char_vect[0][0][char_ix] = 1
+#         #Run prediction.
+#         probas, hidden = decoder.predict(hidden, char_vect)
+#         #Add prediction if last char.
+#         if i == len(out) - 1:
+#             topv, topi = probas.topk(1)
+#             char = ix_to_char_l2[topi[0].item()]
+#             out += char
+#             if char == CHAR_END:
+#                 break
+#         i += 1
+#     return out
+#
+#
+#
+#
+# l1, l2 = dataset[torch.randint(len(dataset), (1,)).item()]
+# print(l1, l2)
+# Xi = make_input_vect(l1, char_to_ix_l1, incl_last_char=True).unsqueeze(0).to(device)
+# h = encoder(Xi)
+# greedy_decode(h, max_length=100)
