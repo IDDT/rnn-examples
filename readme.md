@@ -18,5 +18,5 @@ Replace nn.RNN with nn.GRU to get LSTM like performance. Keep in mind LSTM requi
 4. `name_generator_optimized.py` - Uses targets that are mapped to a packed sequence input. Uses less samples, therefore is faster and memory efficient.
 
 #### Sentence to sequence translators.
-1. `seq2seq_batched_forced_onehot.py` - Encoder output passed as initial hidden state of the decoder. Using teacher forcing and one hot encoded vectors.
+1. `0.957 seq2seq_batched_forced_onehot.py` - Encoder output passed as initial hidden state of the decoder. Using teacher forcing and one hot encoded vectors.
 2. `seq2seq_batched_forced_propagated_onehot.py` - Encoder output passed as initial hidden state of the decoder as well as added to every input of the decoder. Using teacher forcing and one hot encoded vectors.

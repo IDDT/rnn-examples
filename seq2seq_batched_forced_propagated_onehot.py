@@ -114,11 +114,9 @@ n_test = len(dataset) // 10
 dataset_train, dataset_test = \
     random_split(dataset, (len(dataset) - n_test, n_test))
 assert len(dataset_test) >= batch_size, "Batch size should be reduced."
-dataloader_train = DataLoader(dataset_train,
-    collate_fn=make_x_y,
+dataloader_train = DataLoader(dataset_train, collate_fn=make_x_y,
     batch_size=batch_size, shuffle=True, drop_last=True, num_workers=4)
-dataloader_test = DataLoader(dataset_test,
-    collate_fn=make_x_y,
+dataloader_test = DataLoader(dataset_test, collate_fn=make_x_y,
     batch_size=batch_size, shuffle=False, drop_last=True, num_workers=4)
 
 
