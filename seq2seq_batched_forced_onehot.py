@@ -177,10 +177,10 @@ decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
 optim_enc = torch.optim.Adam(encoder.parameters(), lr=0.001)
 optim_dec = torch.optim.Adam(decoder.parameters(), lr=0.001)
-# encoder.load_state_dict(torch.load('models/encoder.state', map_location=device))
-# decoder.load_state_dict(torch.load('models/decoder.state', map_location=device))
-# optim_enc.load_state_dict(torch.load('models/optim_enc.state', map_location=device))
-# optim_dec.load_state_dict(torch.load('models/optim_dec.state', map_location=device))
+# encoder.load_state_dict(torch.load('models/encoder_bfo.model', map_location=device))
+# decoder.load_state_dict(torch.load('models/decoder_bfo.model', map_location=device))
+# optim_enc.load_state_dict(torch.load('models/encoder_bfo.optim', map_location=device))
+# optim_dec.load_state_dict(torch.load('models/decoder_bfo.optim', map_location=device))
 
 
 #%% Training.
@@ -225,15 +225,21 @@ for epoch in range(1001):
     #Save state & early stopping.
     unimproved_epochs += 1
     if loss_test < loss_min:
-        torch.save(encoder.state_dict(), 'models/encoder.state')
-        torch.save(decoder.state_dict(), 'models/decoder.state')
-        torch.save(optim_enc.state_dict(), 'models/optim_enc.state')
-        torch.save(optim_dec.state_dict(), 'models/optim_dec.state')
+        torch.save(encoder.state_dict(), 'models/encoder_bfo.model')
+        torch.save(decoder.state_dict(), 'models/decoder_bfo.model')
+        torch.save(optim_enc.state_dict(), 'models/encoder_bfo.optim')
+        torch.save(optim_dec.state_dict(), 'models/decoder_bfo.optim')
         loss_min = loss_test
         unimproved_epochs = 0
     if unimproved_epochs > max_unimproved_epochs:
         print(f'E {epoch} Early stopping. BEST TEST: {loss_min:.3f}')
         break
+
+
+
+#Quit here if ran as script.
+if __name__ == '__main__':
+    quit()
 
 
 
