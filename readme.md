@@ -19,4 +19,5 @@ Replace nn.RNN with nn.GRU to get LSTM like performance. Keep in mind LSTM requi
 
 #### Sentence to sequence translators.
 1. `0.957 seq2seq_batched_forced_onehot.py` - Encoder output passed as initial hidden state of the decoder. Using teacher forcing and one hot encoded vectors.
-2. `seq2seq_batched_forced_propagated_onehot.py` - Encoder output passed as initial hidden state of the decoder as well as added to every input of the decoder. Using teacher forcing and one hot encoded vectors.
+2. `0.845 seq2seq_batched_forced_propagated_onehot.py` - Encoder output passed as initial hidden state of the decoder as well as added to every input of the decoder. Using teacher forcing and one hot encoded vectors.
+3. `0.854 seq2seq_batched_forced_propagated2_onehot.py` - Encoder output is added to every input of the decoder. Initial state of the decoder is empty.
