@@ -6,6 +6,12 @@ Every script is GPU optimized unless it has "cpu" in its filename.
 Replace nn.RNN with nn.GRU to get LSTM like performance. Keep in mind LSTM requires 2 hidden layers.
 
 
+#### Data
+Names from Pytorch tutorial: https://pytorch.org/tutorials/intermediate/seq2seq_translation_tutorial.html
+Thai names: https://hearnames.com/pronunciations/thai-names/thai-surnames
+Translation pairs: https://www.manythings.org/anki/
+
+
 #### Name classifiers.
 1. `name_classifier_rnn_onehot.py` - Classify names using rnn with one hot encoded characters.
 2. `name_classifier_rnn_embedding.py` - Classify names using rnn with dense embeddings.
