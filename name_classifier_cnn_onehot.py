@@ -95,14 +95,13 @@ weights = weights.max() / weights
 class CNNClassifier(nn.Module):
     def __init__(self, seq_len, input_size, output_size):
         super(CNNClassifier, self).__init__()
-        self.conv_a = torch.nn.Conv1d(input_size, 20, 5)
-        self.conv_b = torch.nn.Conv1d(input_size, 20, 4)
-        self.conv_c = torch.nn.Conv1d(input_size, 20, 3)
+        self.conv_a = nn.Conv1d(input_size, 20, 5)
+        self.conv_b = nn.Conv1d(input_size, 20, 4)
+        self.conv_c = nn.Conv1d(input_size, 20, 3)
         #Max value from all outputs.
         self.lin = nn.Linear(60, output_size)
     def forward(self, x):
-        #batch, n_channels, seq_len, input_size = x.shape
-        batch_size = x.shape[0]
+        #batch_size, n_channels(input_size), seq_len = x.shape
         x = torch.cat((
             self.conv_a(x).max(dim=2)[0],
             self.conv_b(x).max(dim=2)[0],
@@ -149,6 +148,12 @@ for epoch in range(1001):
         print(f'E {epoch} Early stopping. BEST TEST: {loss_min:.3f}')
         print(f'Took: {minutes_took:.1f}m')
         break
+
+
+
+#Quit here if ran as script.
+if __name__ == '__main__':
+    quit()
 
 
 
