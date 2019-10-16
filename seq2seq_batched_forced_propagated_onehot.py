@@ -67,7 +67,7 @@ char_to_ix_l2 = {x: i for i, x in enumerate(CHAR_BEG + ALL_CHARS_L2 + CHAR_END)}
 class Dataset(torch.utils.data.Dataset):
     def __init__(self, preprocess_fn):
         self.pairs = []
-        with open('data/eng-fra.txt', 'rt') as f:
+        with open('data/lang-pairs/eng-fra.txt', 'rt') as f:
             for line in f:
                 eng, fra = line.strip().split('\t')
                 eng, fra = preprocess_fn(eng), preprocess_fn(fra)
