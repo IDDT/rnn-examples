@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, random_split
 #Settings.
 torch.manual_seed(0)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-batch_size = 100
+batch_size = 1024
 
 
 
@@ -82,11 +82,9 @@ class Dataset(torch.utils.data.Dataset):
 def make_input_vect(string, char_to_ix, incl_last_char=True):
     if not incl_last_char:
         string = string[0:-1]
-    out = torch.zeros(len(string), len(char_to_ix), dtype=torch.float32,
-        device=torch.device('cpu'), requires_grad=False)
-    for c, char in enumerate(string):
-        out[c][char_to_ix[char]] = 1
-    return out
+    indices = torch.tensor([char_to_ix[char] for char in string],
+        dtype=torch.int64, device=torch.device('cpu'), requires_grad=False)
+    return F.one_hot(indices, num_classes=len(char_to_ix)).type(torch.float32)
 
 def make_x_y(inputs):
     l1, l2 = zip(*inputs)
@@ -150,41 +148,34 @@ class Decoder(nn.Module):
         self.rnn = nn.GRUCell(output_size, hidden_size)
         self.lin = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x, h, forcing_ratio=0.9):
+    def forward(self, x, h, forcing_ratio=0.5):
         assert type(x) == torch.nn.utils.rnn.PackedSequence
         assert type(h) == torch.Tensor
         assert h.shape[1] == x.batch_sizes[0]
         assert h.shape[2] == self.hidden_size
-        #Placeholder to store outputs.
-        outputs = torch.empty_like(x.data)
         #Arrange hidden according to packed sequence indexes.
         hidden = h.squeeze(0)[x.sorted_indices]
-        #Set inputs placeholder.
-        inputs = None
+        #Set placeholders.
+        inputs = torch.zeros_like(x.data[0:x.batch_sizes[0]])
+        outputs = torch.empty_like(x.data)
         #Iterate through packed sequence manually.
-        for i in range(len(x.batch_sizes)):
+        for i, batch_size in enumerate(x.batch_sizes.tolist()):
             #Get data for RNN step.
-            batch_size = x.batch_sizes[i]
-            beg_ix = x.batch_sizes[0:i].sum().item()
-            end_ix = beg_ix + x.batch_sizes[i].item()
-            data = x.data[beg_ix:end_ix]
-            #Make inputs. Replace items from data according to forcing_ratio.
-            if inputs is None:
-                inputs = data
-            else:
-                inputs = inputs[0:batch_size]
-                indices = torch.randperm(len(data))\
-                    [0:int(len(data) * forcing_ratio)]
-                inputs[indices] = data[indices]
+            beg_ix = x.batch_sizes[0:i].sum()
+            end_ix = beg_ix + batch_size
+            #Forcing ratio is 100% on first input.
+            ratio = 1.0 if i == 0 else forcing_ratio
+            #Replace random items from true data according to ratio.
+            indices = torch.randperm(batch_size)[0:int(batch_size * ratio)]
+            inputs[indices] = x.data[beg_ix:end_ix][indices]
             #Generate next hidden.
-            hidden = self.rnn(inputs, hidden[0:batch_size])
+            hidden = self.rnn(inputs[0:batch_size], hidden[0:batch_size])
             #Generate predictions.
             outputs[beg_ix:end_ix] = F.log_softmax(self.lin(hidden), dim=1)
             #Genetate next inputs.
-            topi = outputs[beg_ix:end_ix].topk(1)[1].squeeze(1)
-            inputs = torch.zeros_like(data)
-            for i, ix in enumerate(topi):
-                inputs[i][ix] = 1
+            topi = outputs[beg_ix:end_ix].topk(1)[1].flatten()
+            inputs = F.one_hot(topi, num_classes=x.data.shape[1])\
+                .type(torch.float32)
         return outputs
 
 

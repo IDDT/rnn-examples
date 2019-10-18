@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, random_split
 #Settings.
 torch.manual_seed(0)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-batch_size = 100
+batch_size = 1024
 
 
 
@@ -82,11 +82,9 @@ class Dataset(torch.utils.data.Dataset):
 def make_input_vect(string, char_to_ix, incl_last_char=True):
     if not incl_last_char:
         string = string[0:-1]
-    out = torch.zeros(len(string), len(char_to_ix), dtype=torch.float32,
-        device=torch.device('cpu'), requires_grad=False)
-    for c, char in enumerate(string):
-        out[c][char_to_ix[char]] = 1
-    return out
+    indices = torch.tensor([char_to_ix[char] for char in string],
+        dtype=torch.int64, device=torch.device('cpu'), requires_grad=False)
+    return F.one_hot(indices, num_classes=len(char_to_ix)).type(torch.float32)
 
 def make_x_y(inputs):
     l1, l2 = zip(*inputs)
