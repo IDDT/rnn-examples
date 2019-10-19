@@ -128,7 +128,7 @@ class Encoder(nn.Module):
         self.rnn = nn.GRU(input_size, hidden_size, batch_first=True)
 
     def forward(self, x):
-        assert type(x) is torch.nn.utils.rnn.PackedSequence:
+        assert type(x) is torch.nn.utils.rnn.PackedSequence
         batch_size = x.batch_sizes[0].item()
         device, dtype = x.data.device, x.data.dtype
         h0 = torch.zeros(1, batch_size, self.hidden_size,

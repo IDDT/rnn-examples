@@ -123,13 +123,13 @@ dataloader_test = DataLoader(dataset_test, collate_fn=make_x_y,
 class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size):
         super(Encoder, self).__init__()
-        assert hidden_size % 2 == 0, "Hidden must be divisible by 2."
+        assert hidden_size % 2 == 0, "Hidden size must be divisible by 2."
         self.hidden_size = hidden_size
         self.rnn = nn.GRU(input_size, hidden_size, batch_first=True)
         self.lin_compress = nn.Linear(hidden_size, hidden_size // 2)
 
     def forward(self, x):
-        assert type(x) is torch.nn.utils.rnn.PackedSequence:
+        assert type(x) is torch.nn.utils.rnn.PackedSequence
         batch_size = x.batch_sizes[0].item()
         device, dtype = x.data.device, x.data.dtype
         h0 = torch.zeros(1, batch_size, self.hidden_size,
@@ -140,8 +140,9 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, hidden_size, output_size):
         super(Decoder, self).__init__()
+        assert hidden_size % 2 == 0, "Hidden size must be divisible by 2."
         self.hidden_size = hidden_size
-        self.rnn = nn.GRU(hidden_size, hidden_size,
+        self.rnn = nn.GRU(output_size + hidden_size // 2, hidden_size,
             batch_first=True)
         self.lin = nn.Linear(hidden_size, output_size)
 
@@ -195,7 +196,7 @@ for epoch in range(1001):
         hidden_sorted = h.squeeze(0)[X.sorted_indices]
         hidden_arranged = []
         for size in X.batch_sizes:
-            hidden_arranged.append(hidden_sorted[0:size.item()])
+            hidden_arranged.append(hidden_sorted[0:size])
         hidden_arranged = torch.cat(hidden_arranged, dim=0)
         X = nn.utils.rnn.PackedSequence(
             torch.cat((X.data, hidden_arranged), dim=1),
@@ -227,7 +228,7 @@ for epoch in range(1001):
             hidden_sorted = h.squeeze(0)[X.sorted_indices]
             hidden_arranged = []
             for size in X.batch_sizes:
-                hidden_arranged.append(hidden_sorted[0:size.item()])
+                hidden_arranged.append(hidden_sorted[0:size])
             hidden_arranged = torch.cat(hidden_arranged, dim=0)
             X = nn.utils.rnn.PackedSequence(
                 torch.cat((X.data, hidden_arranged), dim=1),
