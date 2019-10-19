@@ -107,6 +107,7 @@ def make_x_y(inputs):
             y[i + X.batch_sizes[0:c].sum().item()] = char_to_ix_l2[char]
     return Xi, X, y
 
+
 dataset = Dataset(preprocess_fn)
 n_test = len(dataset) // 10
 dataset_train, dataset_test = \
@@ -144,37 +145,58 @@ class Decoder(nn.Module):
     def __init__(self, hidden_size, output_size):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
-        self.rnn = nn.GRU(output_size + hidden_size, hidden_size, batch_first=True)
+        self.rnn = nn.GRUCell(output_size, hidden_size)
         self.lin = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, h, x):
-        assert type(h) == torch.Tensor
+    def forward(self, x, h, forcing_ratio=0.8):
         assert type(x) == torch.nn.utils.rnn.PackedSequence
+        assert type(h) == torch.Tensor
         assert h.shape[1] == x.batch_sizes[0]
         assert h.shape[2] == self.hidden_size
-        x, _ = self.rnn(x, h)
-        x = self.lin(x.data)
-        return F.log_softmax(x, dim=1)
+        #Arrange hidden according to packed sequence indexes.
+        hidden = h.squeeze(0)[x.sorted_indices]
+        #Set placeholders.
+        inputs = torch.zeros_like(x.data[0:x.batch_sizes[0]])
+        outputs = torch.empty_like(x.data)
+        #Iterate through packed sequence manually.
+        for i, batch_size in enumerate(x.batch_sizes.tolist()):
+            #Get data for RNN step.
+            beg_ix = x.batch_sizes[0:i].sum()
+            end_ix = beg_ix + batch_size
+            #Forcing ratio is 100% on first input.
+            ratio = 1.0 if i == 0 else forcing_ratio
+            #Replace random items from true data according to ratio.
+            indices = torch.randperm(batch_size)[0:int(batch_size * ratio)]
+            inputs[indices] = x.data[beg_ix:end_ix][indices]
+            #Generate next hidden.
+            hidden = self.rnn(inputs[0:batch_size], hidden[0:batch_size])
+            #Generate predictions.
+            outputs[beg_ix:end_ix] = F.log_softmax(self.lin(hidden), dim=1)
+            #Genetate next inputs.
+            topi = outputs[beg_ix:end_ix].topk(1)[1].flatten()
+            inputs = F.one_hot(topi, num_classes=x.data.shape[1])\
+                .type(torch.float32)
+        return outputs
 
-    def predict(self, h, x):
-        #Output and hidden are the same if seq_len = 1.
-        _, h = self.rnn(x, h)
-        probas = F.softmax(self.lin(h), dim=2)
-        return probas, h
+    def predict(self, x, h):
+        hidden = self.rnn(x, h)
+        probas = F.softmax(self.lin(hidden), dim=1)
+        return probas, hidden
+
+
 
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
-hidden_size = 100
+hidden_size = 256
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
 optim_enc = torch.optim.Adam(encoder.parameters(), lr=0.001)
 optim_dec = torch.optim.Adam(decoder.parameters(), lr=0.001)
-# encoder.load_state_dict(torch.load('models/encoder_bfpo.model', map_location=device))
-# decoder.load_state_dict(torch.load('models/decoder_bfpo.model', map_location=device))
-# optim_enc.load_state_dict(torch.load('models/encoder_bfpo.optim', map_location=device))
-# optim_dec.load_state_dict(torch.load('models/decoder_bfpo.optim', map_location=device))
+# encoder.load_state_dict(torch.load('models/encoder_uo.model', map_location=device))
+# decoder.load_state_dict(torch.load('models/decoder_uo.model', map_location=device))
+# optim_enc.load_state_dict(torch.load('models/encoder_uo.optim', map_location=device))
+# optim_dec.load_state_dict(torch.load('models/decoder_uo.optim', map_location=device))
 
 
 
@@ -191,21 +213,8 @@ for epoch in range(1001):
         #Workaround for bug in pytorch==1.2.
         #Xi, X, y = Xi.to(device), X.to(device), y.to(device)
         Xi, X, y = Xi.to(device=device), X.to(device=device), y.to(device)
-        #Encode.
         h = encoder(Xi)
-        #Append hidden to inputs.
-        hidden_sorted = h.squeeze(0)[X.sorted_indices]
-        hidden_arranged = []
-        for size in X.batch_sizes:
-            hidden_arranged.append(hidden_sorted[0:size.item()])
-        hidden_arranged = torch.cat(hidden_arranged, dim=0)
-        X = nn.utils.rnn.PackedSequence(
-            torch.cat((X.data, hidden_arranged), dim=1),
-            batch_sizes=X.batch_sizes, sorted_indices=X.sorted_indices,
-            unsorted_indices=X.unsorted_indices)
-        #Decode.
-        y_pred = decoder(h, X)
-        #Calc loss.
+        y_pred = decoder(X, h)
         loss = loss_fn(y_pred, y)
         optim_enc.zero_grad()
         optim_dec.zero_grad()
@@ -223,21 +232,8 @@ for epoch in range(1001):
             #Workaround for bug in pytorch==1.2.
             #Xi, X, y = Xi.to(device), X.to(device), y.to(device)
             Xi, X, y = Xi.to(device=device), X.to(device=device), y.to(device)
-            #Encode.
             h = encoder(Xi)
-            #Append hidden to inputs.
-            hidden_sorted = h.squeeze(0)[X.sorted_indices]
-            hidden_arranged = []
-            for size in X.batch_sizes:
-                hidden_arranged.append(hidden_sorted[0:size.item()])
-            hidden_arranged = torch.cat(hidden_arranged, dim=0)
-            X = nn.utils.rnn.PackedSequence(
-                torch.cat((X.data, hidden_arranged), dim=1),
-                batch_sizes=X.batch_sizes, sorted_indices=X.sorted_indices,
-                unsorted_indices=X.unsorted_indices)
-            #Decode.
-            y_pred = decoder(h, X)
-            #Calc loss.
+            y_pred = decoder(X, h)
             losses.append(loss_fn(y_pred, y).item())
     loss_test = torch.tensor(losses, dtype=torch.float64).mean().item()
     #Feedback.
@@ -246,10 +242,10 @@ for epoch in range(1001):
     #Save state & early stopping.
     unimproved_epochs += 1
     if loss_test < loss_min:
-        torch.save(encoder.state_dict(), 'models/encoder_bfpo.model')
-        torch.save(decoder.state_dict(), 'models/decoder_bfpo.model')
-        torch.save(optim_enc.state_dict(), 'models/encoder_bfpo.optim')
-        torch.save(optim_dec.state_dict(), 'models/decoder_bfpo.optim')
+        torch.save(encoder.state_dict(), 'models/encoder_uo.model')
+        torch.save(decoder.state_dict(), 'models/decoder_uo.model')
+        torch.save(optim_enc.state_dict(), 'models/encoder_uo.optim')
+        torch.save(optim_dec.state_dict(), 'models/decoder_uo.optim')
         loss_min = loss_test
         unimproved_epochs = 0
     if unimproved_epochs > max_unimproved_epochs:
@@ -271,19 +267,18 @@ decoder.eval()
 ix_to_char_l2 = {value: key for key, value in char_to_ix_l2.items()}
 
 def greedy_decode(hidden, max_length=100):
-    hidden_original = hidden.clone()
+    hidden.squeeze_(1)
     out = '<'
     i = 0
     #Predicting.
     while len(out) < max_length:
         #Make char vector.
         char_ix = char_to_ix_l2[out[i]]
-        char_vect = torch.zeros(1, 1, len(char_to_ix_l2),
+        char_vect = torch.zeros(1, len(char_to_ix_l2),
             dtype=torch.float32, device=device, requires_grad=False)
-        char_vect[0][0][char_ix] = 1
-        char_vect = torch.cat((char_vect, hidden_original), dim=2)
+        char_vect[0][char_ix] = 1
         #Run prediction.
-        probas, hidden = decoder.predict(hidden, char_vect)
+        probas, hidden = decoder.predict(char_vect, hidden)
         #Add prediction if last char.
         if i == len(out) - 1:
             topv, topi = probas.topk(1)
@@ -293,6 +288,8 @@ def greedy_decode(hidden, max_length=100):
                 break
         i += 1
     return out
+
+
 
 l1, l2 = dataset[torch.randint(len(dataset), (1,)).item()]
 print(l1, l2)
