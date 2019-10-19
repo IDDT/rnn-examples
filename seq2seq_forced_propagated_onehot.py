@@ -129,9 +129,14 @@ class Encoder(nn.Module):
         self.lin_compress = nn.Linear(hidden_size, hidden_size // 2)
 
     def forward(self, x):
-        assert type(x) is torch.nn.utils.rnn.PackedSequence
-        batch_size = x.batch_sizes[0].item()
-        device, dtype = x.data.device, x.data.dtype
+        if type(x) == torch.nn.utils.rnn.PackedSequence:
+            batch_size = x.batch_sizes[0].item()
+            device, dtype = x.data.device, x.data.dtype
+        elif type(x) == torch.Tensor:
+            batch_size = x.shape[0]
+            device, dtype = x.device, x.dtype
+        else:
+            raise ValueError('Unknown tensor type.')
         h0 = torch.zeros(1, batch_size, self.hidden_size,
             dtype=dtype, device=device)
         _, h = self.rnn(x, h0)
@@ -271,6 +276,7 @@ ix_to_char_l2 = {value: key for key, value in char_to_ix_l2.items()}
 
 def greedy_decode(hidden, max_length=100):
     hidden_original = hidden.clone()
+    hidden = None
     out = '<'
     i = 0
     #Predicting.
