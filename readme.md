@@ -1,13 +1,11 @@
-# Implementations for PyTorch RNN tutorials with some additions.
+# Practical, short, short, self-contained implementations of various NLP tasks using Pytorch 1.2.
 
 
 Every script is GPU optimized unless it has "cpu" in its filename.
 
-Replace nn.RNN with nn.GRU to get LSTM like performance. Keep in mind LSTM requires 2 hidden layers.
-
 
 #### Data
-Names from Pytorch tutorial: https://pytorch.org/tutorials/intermediate/seq2seq_translation_tutorial.html
+Names of different nationalities are tanken from Pytorch tutorial: https://pytorch.org/tutorials/intermediate/seq2seq_translation_tutorial.html
 Thai names: https://hearnames.com/pronunciations/thai-names/thai-surnames
 Translation pairs: https://www.manythings.org/anki/
 
@@ -24,6 +22,13 @@ Translation pairs: https://www.manythings.org/anki/
 4. `name_generator_optimized.py` - Uses targets that are mapped to a packed sequence input. Uses less samples, therefore is faster and memory efficient.
 
 #### Sentence to sequence translators.
-1. `seq2seq_onehot.py` - Encoder output passed as initial hidden state of the decoder. Using teacher forcing and one hot encoded vectors.
-2. `seq2seq_propagated_onehot.py` - Encoder output is compressed and added to every input of the decoder. initial state of the decoder is empty. Using teacher forcing and one hot encoded vectors.
-3. `seq2seq_unforced_onehot.py` - Encoder output passed as initial hidden state of the decoder. Tunable teacher forcing and one hot encoded vectors.
+1. `seq2seq_onehot.py` [Sequence to Sequence Learning with Neural Networks](https://arxiv.org/abs/1409.3215)
+  - Latest hidden state of the encoder RNN is passed as initial state of the decoder RNN.
+  - This implementation is using teacher forcing and one hot encoded vectors.
+2. `seq2seq_propagated_onehot.py` [Learning Phrase Representations using RNN Encoder-Decoder for Statistical Machine Translation](https://arxiv.org/abs/1406.1078)
+  - Latest hidden state of the encoder RNN is added to every input of the decoder RNN.
+  - In this implementation, the initial hidden state of the decoder is empty.
+  - Using teacher forcing and one hot encoded vectors.
+3. `seq2seq_unforced_onehot.py` [Scheduled Sampling for Sequence Prediction with Recurrent Neural Networks](https://arxiv.org/abs/1506.03099)
+  - Latest hidden state of the encoder RNN is passed as initial state of the decoder RNN. Tunable teacher forcing for the decoder allows to use model outputs during training.
+  - Using one hot encoded vectors.
