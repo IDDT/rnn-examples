@@ -9,11 +9,8 @@ import torch.nn.functional as F
 
 
 
-#GPU ready classifier with large batch.
-#1D CNN on one-hot encoded char vectors.
-
-
-
+#%% Settings.
+torch.manual_seed(0)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
@@ -149,7 +146,7 @@ for epoch in range(1001):
 
 
 
-#Quit here if ran as script.
+#%% Quit here if ran as script.
 if __name__ == '__main__':
     quit()
 

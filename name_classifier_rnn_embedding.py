@@ -9,11 +9,8 @@ import torch.nn.functional as F
 
 
 
-#GPU ready classifier with large batch using packed sequence.
-#Using RNN with dense char embeddings.
-
-
-
+#%% Settings.
+torch.manual_seed(0)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
@@ -151,6 +148,12 @@ for epoch in range(1001):
         print(f'E {epoch} Early stopping. BEST TEST: {loss_min:.3f}')
         print(f'Took: {minutes_took:.1f}m')
         break
+
+
+
+#%% Quit here if ran as script.
+if __name__ == '__main__':
+    quit()
 
 
 
