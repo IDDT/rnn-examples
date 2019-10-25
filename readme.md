@@ -11,9 +11,13 @@ Translation pairs: https://www.manythings.org/anki/
 
 
 #### Name classifiers.
-1. `name_classifier_rnn_onehot.py` - Classify names using rnn with one hot encoded characters.
-2. `name_classifier_rnn_embedding.py` - Classify names using rnn with dense embeddings.
-3. `name_classifier_cnn_onehot.py` - Classify names using conv1d with one hot encoded characters.
+1. `name_classifier_rnn_onehot.py`
+  - Classify texts using RNN with one hot encoded vectors as inputs.
+2. `name_classifier_rnn_embedding.py`
+  - Classify names using RNN with dense embeddings.
+3. `name_classifier_cnn_onehot.py` [Convolutional Neural Networks for Sentence Classification](https://arxiv.org/abs/1408.5882)
+  - Classify texts using CONV1D layers.
+  - Using one hot encoded vectors.
 
 #### Name generators.
 1. `name_generator_cpu.py` - Implementation learning data char by char, resembling implementation in the PyTorch tutorial.
