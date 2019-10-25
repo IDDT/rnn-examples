@@ -81,15 +81,13 @@ yt = torch.tensor([cate_to_ix[x] for x in categories_t],
 
 
 #%% Make category weights.
-counts = {}
-for target in y_t:
-    target = target.item()
-    if target not in counts:
-        counts[target] = 0
-    counts[target] += 1
-weights = torch.tensor([counts.get(i, 0) for i in range(len(cate_to_ix))],
-    dtype=torch.float32, device=device, requires_grad=False)
-weights = weights.max() / weights
+indices, counts = y.unique(return_counts=True)
+indices, counts = indices.detach().tolist(), counts.detach().tolist()
+weights = torch.zeros(len(cate_to_ix), dtype=torch.float32,
+    device=device, requires_grad=False)
+for ix, count in zip(indices, counts):
+    weights[ix] = count
+weights = weights.max() / weights.clamp(min=1)
 
 
 
