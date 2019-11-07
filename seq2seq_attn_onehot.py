@@ -145,8 +145,8 @@ class Decoder(nn.Module):
     def __init__(self, hidden_size, output_size):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
-        self.rnn = nn.GRUCell(output_size, hidden_size * 2)
-        self.lin_o = nn.Linear(hidden_size * 2, output_size)
+        self.rnn = nn.GRUCell(output_size, hidden_size)
+        self.lin_o = nn.Linear(hidden_size, output_size)
         self.lin_h = nn.Linear(hidden_size * 2, hidden_size)
 
     def forward(self, x, h, hs):
@@ -180,20 +180,19 @@ class Decoder(nn.Module):
             weights = weights.squeeze(1).unsqueeze(2)\
                 .expand(-1, -1, hidden_seq.shape[2])
             context = (weights * hidden_seq[0:batch_size]).mean(dim=1)
-            #Make RNN state by concatenating hidden & context.
-            rnn_state = torch.cat((hidden[0:batch_size], context), dim=1)
+            #Make new hidden.
+            hidden = torch.cat((hidden[0:batch_size], context), dim=1)
+            hidden = self.lin_h(hidden)
             #Generate next hidden.
-            rnn_state = self.rnn(inputs[0:batch_size], rnn_state)
+            hidden = self.rnn(inputs[0:batch_size], hidden)
             #Generate predictions.
-            y[beg_ix:end_ix] = F.log_softmax(self.lin_o(rnn_state), dim=1)
-            #Genetate next hidden.
-            hidden = self.lin_h(rnn_state)
+            y[beg_ix:end_ix] = F.log_softmax(self.lin_o(hidden), dim=1)
         return y
 
-    def predict(self, x, h):
-        hidden = self.rnn(x, h)
-        probas = F.softmax(self.lin(hidden), dim=1)
-        return probas, hidden
+    # def predict(self, x, h):
+    #     hidden = self.rnn(x, h)
+    #     probas = F.softmax(self.lin(hidden), dim=1)
+    #     return probas, hidden
 
 
 
@@ -254,10 +253,10 @@ for epoch in range(1001):
     #Save state & early stopping.
     unimproved_epochs += 1
     if loss_test < loss_min:
-        torch.save(encoder.state_dict(), 'models/encoder_uo.model')
-        torch.save(decoder.state_dict(), 'models/decoder_uo.model')
-        torch.save(optim_enc.state_dict(), 'models/encoder_uo.optim')
-        torch.save(optim_dec.state_dict(), 'models/decoder_uo.optim')
+        torch.save(encoder.state_dict(), 'models/encoder_ao.model')
+        torch.save(decoder.state_dict(), 'models/decoder_ao.model')
+        torch.save(optim_enc.state_dict(), 'models/encoder_ao.optim')
+        torch.save(optim_dec.state_dict(), 'models/decoder_ao.optim')
         loss_min = loss_test
         unimproved_epochs = 0
     if unimproved_epochs > max_unimproved_epochs:
