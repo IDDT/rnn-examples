@@ -190,10 +190,28 @@ class Decoder(nn.Module):
             y[beg_ix:end_ix] = F.log_softmax(self.lin_o(hidden), dim=1)
         return y
 
-    # def predict(self, x, h):
-    #     hidden = self.rnn(x, h)
-    #     probas = F.softmax(self.lin(hidden), dim=1)
-    #     return probas, hidden
+    def predict(self, x, h, hs):
+        hidden = h.squeeze(0)
+        hidden_seq = hs
+        #Calc alignment scores for timesteps.
+        raw_weights = torch.bmm(
+            hidden.unsqueeze(1),
+            hidden_seq.transpose(1, 2)
+        )
+        weights = F.softmax(raw_weights, dim=2)
+        #Calc context from alignment scores.
+        context = weights.squeeze(1).unsqueeze(2)\
+            .expand(-1, -1, hidden_seq.shape[2])\
+            .mul(hidden_seq)\
+            .mean(dim=1)
+        #Make new hidden.
+        hidden = torch.cat((hidden, context), dim=1)
+        hidden = self.lin_h(hidden)
+        #Generate next hidden.
+        hidden = self.rnn(x, hidden)
+        #Generate predictions.
+        probas = F.softmax(self.lin_o(hidden), dim=1)
+        return probas, hidden
 
 
 
@@ -203,10 +221,10 @@ hidden_size = 256
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
-optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.01)
-# encoder.load_state_dict(torch.load('models/s2s_encoder_uo.model', map_location=device))
-# decoder.load_state_dict(torch.load('models/s2s_decoder_uo.model', map_location=device))
-# optim.load_state_dict(torch.load('models/s2s_uo.optim', map_location=device))
+optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.001)
+# encoder.load_state_dict(torch.load('models/s2s_encoder_ao.model', map_location=device))
+# decoder.load_state_dict(torch.load('models/s2s_decoder_ao.model', map_location=device))
+# optim.load_state_dict(torch.load('models/s2s_ao.optim', map_location=device))
 
 
 
@@ -273,8 +291,7 @@ decoder.eval()
 
 ix_to_char_l2 = {value: key for key, value in char_to_ix_l2.items()}
 
-def greedy_decode(hidden, max_length=100):
-    hidden.squeeze_(1)
+def greedy_decode(hidden, hs, max_length=100):
     out = '<'
     i = 0
     #Predicting.
@@ -285,7 +302,8 @@ def greedy_decode(hidden, max_length=100):
             dtype=torch.float32, device=device, requires_grad=False)
         char_vect[0][char_ix] = 1
         #Run prediction.
-        probas, hidden = decoder.predict(char_vect, hidden)
+        probas, hidden = decoder.predict(char_vect, hidden, hs.clone())
+        hidden = hidden.unsqueeze(0)
         #Add prediction if last char.
         if i == len(out) - 1:
             topv, topi = probas.topk(1)
@@ -297,9 +315,8 @@ def greedy_decode(hidden, max_length=100):
     return out
 
 
-
 l1, l2 = dataset[torch.randint(len(dataset), (1,)).item()]
 print(l1, l2)
 Xi = make_input_vect(l1, char_to_ix_l1, incl_last_char=True).unsqueeze(0).to(device)
-h = encoder(Xi)
-greedy_decode(h, max_length=100)
+hs, h = encoder(Xi)
+greedy_decode(h, hs, max_length=100)

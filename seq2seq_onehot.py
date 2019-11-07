@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, random_split
 #Settings.
 torch.manual_seed(0)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-batch_size = 1024
+batch_size = 512
 
 
 
@@ -171,7 +171,7 @@ hidden_size = 256
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
-optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.01)
+optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.001)
 # encoder.load_state_dict(torch.load('models/s2s_encoder_o.model', map_location=device))
 # decoder.load_state_dict(torch.load('models/s2s_decoder_o.model', map_location=device))
 # optim.load_state_dict(torch.load('models/s2s_o.optim', map_location=device))
