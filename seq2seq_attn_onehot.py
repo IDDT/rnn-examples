@@ -177,9 +177,10 @@ class Decoder(nn.Module):
             )
             weights = F.softmax(raw_weights, dim=2)
             #Calc context from alignment scores.
-            weights = weights.squeeze(1).unsqueeze(2)\
-                .expand(-1, -1, hidden_seq.shape[2])
-            context = (weights * hidden_seq[0:batch_size]).mean(dim=1)
+            context = weights.squeeze(1).unsqueeze(2)\
+                .expand(-1, -1, hidden_seq.shape[2])\
+                .mul(hidden_seq[0:batch_size])\
+                .mean(dim=1)
             #Make new hidden.
             hidden = torch.cat((hidden[0:batch_size], context), dim=1)
             hidden = self.lin_h(hidden)
