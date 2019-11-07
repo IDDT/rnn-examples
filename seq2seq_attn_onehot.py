@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, random_split
 #Settings.
 torch.manual_seed(0)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-batch_size = 1024
+batch_size = 512
 
 
 
@@ -203,10 +203,10 @@ hidden_size = 256
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
-optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.001)
-# encoder.load_state_dict(torch.load('models/encoder_uo.model', map_location=device))
-# decoder.load_state_dict(torch.load('models/decoder_uo.model', map_location=device))
-# optim.load_state_dict(torch.load('models/uo.optim', map_location=device))
+optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.01)
+# encoder.load_state_dict(torch.load('models/s2s_encoder_uo.model', map_location=device))
+# decoder.load_state_dict(torch.load('models/s2s_decoder_uo.model', map_location=device))
+# optim.load_state_dict(torch.load('models/s2s_uo.optim', map_location=device))
 
 
 
@@ -250,9 +250,9 @@ for epoch in range(1001):
     #Save state & early stopping.
     unimproved_epochs += 1
     if loss_test < loss_min:
-        torch.save(encoder.state_dict(), 'models/encoder_ao.model')
-        torch.save(decoder.state_dict(), 'models/decoder_ao.model')
-        torch.save(optim.state_dict(), 'models/ao.optim')
+        torch.save(encoder.state_dict(), 'models/s2s_encoder_ao.model')
+        torch.save(decoder.state_dict(), 'models/s2s_decoder_ao.model')
+        torch.save(optim.state_dict(), 'models/s2s_ao.optim')
         loss_min = loss_test
         unimproved_epochs = 0
     if unimproved_epochs > max_unimproved_epochs:

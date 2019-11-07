@@ -171,12 +171,10 @@ hidden_size = 256
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
-optim_enc = torch.optim.Adam(encoder.parameters(), lr=0.001)
-optim_dec = torch.optim.Adam(decoder.parameters(), lr=0.001)
-# encoder.load_state_dict(torch.load('models/encoder_fo.model', map_location=device))
-# decoder.load_state_dict(torch.load('models/decoder_fo.model', map_location=device))
-# optim_enc.load_state_dict(torch.load('models/encoder_fo.optim', map_location=device))
-# optim_dec.load_state_dict(torch.load('models/decoder_fo.optim', map_location=device))
+optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.01)
+# encoder.load_state_dict(torch.load('models/s2s_encoder_o.model', map_location=device))
+# decoder.load_state_dict(torch.load('models/s2s_decoder_o.model', map_location=device))
+# optim.load_state_dict(torch.load('models/s2s_o.optim', map_location=device))
 
 
 #%% Training.
@@ -195,11 +193,9 @@ for epoch in range(1001):
         h = encoder(Xi)
         y_pred = decoder(X, h)
         loss = loss_fn(y_pred, y)
-        optim_enc.zero_grad()
-        optim_dec.zero_grad()
+        optim.zero_grad()
         loss.backward()
-        optim_enc.step()
-        optim_dec.step()
+        optim.step()
         losses.append(loss.item())
     loss_train = torch.tensor(losses, dtype=torch.float64).mean().item()
     #Testing.
@@ -221,10 +217,9 @@ for epoch in range(1001):
     #Save state & early stopping.
     unimproved_epochs += 1
     if loss_test < loss_min:
-        torch.save(encoder.state_dict(), 'models/encoder_fo.model')
-        torch.save(decoder.state_dict(), 'models/decoder_fo.model')
-        torch.save(optim_enc.state_dict(), 'models/encoder_fo.optim')
-        torch.save(optim_dec.state_dict(), 'models/decoder_fo.optim')
+        torch.save(encoder.state_dict(), 'models/s2s_encoder_o.model')
+        torch.save(decoder.state_dict(), 'models/s2s_decoder_o.model')
+        torch.save(optim.state_dict(), 'models/s2s_o.optim')
         loss_min = loss_test
         unimproved_epochs = 0
     if unimproved_epochs > max_unimproved_epochs:
