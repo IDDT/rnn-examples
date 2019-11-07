@@ -165,7 +165,6 @@ class Decoder(nn.Module):
         y = torch.empty_like(x.data)
         #Iterate through packed sequence manually.
         for i, batch_size in enumerate(x.batch_sizes.tolist()):
-            if batch_size
             #Get data for RNN step.
             beg_ix = x.batch_sizes[0:i].sum()
             end_ix = beg_ix + batch_size
@@ -182,7 +181,7 @@ class Decoder(nn.Module):
                 .expand(-1, -1, hidden_seq.shape[2])
             context = (weights * hidden_seq[0:batch_size]).mean(dim=1)
             #Make RNN state by concatenating hidden & context.
-            rnn_state = torch.cat((hidden, context), dim=1)
+            rnn_state = torch.cat((hidden[0:batch_size], context), dim=1)
             #Generate next hidden.
             rnn_state = self.rnn(inputs[0:batch_size], rnn_state)
             #Generate predictions.
@@ -227,7 +226,7 @@ for epoch in range(1001):
         #Xi, X, y = Xi.to(device), X.to(device), y.to(device)
         Xi, X, y = Xi.to(device=device), X.to(device=device), y.to(device)
         hs, h = encoder(Xi)
-        y_pred = decoder(x, h, hs)
+        y_pred = decoder(X, h, hs)
         loss = loss_fn(y_pred, y)
         optim_enc.zero_grad()
         optim_dec.zero_grad()
@@ -246,7 +245,7 @@ for epoch in range(1001):
             #Xi, X, y = Xi.to(device), X.to(device), y.to(device)
             Xi, X, y = Xi.to(device=device), X.to(device=device), y.to(device)
             hs, h = encoder(Xi)
-            y_pred = decoder(x, h, hs)
+            y_pred = decoder(X, h, hs)
             losses.append(loss_fn(y_pred, y).item())
     loss_test = torch.tensor(losses, dtype=torch.float64).mean().item()
     #Feedback.
