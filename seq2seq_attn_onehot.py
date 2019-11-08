@@ -72,6 +72,7 @@ class Dataset(torch.utils.data.Dataset):
                 eng, fra = line.strip().split('\t')
                 eng, fra = preprocess_fn(eng), preprocess_fn(fra)
                 self.pairs.append((fra, eng))
+        self.pairs = self.pairs[0:2048]
 
     def __len__(self):
         return len(self.pairs)
@@ -109,7 +110,7 @@ def make_x_y(inputs):
 
 
 dataset = Dataset(preprocess_fn)
-n_test = len(dataset) // 10
+n_test = len(dataset) // 4
 dataset_train, dataset_test = \
     random_split(dataset, (len(dataset) - n_test, n_test))
 assert len(dataset_test) >= batch_size, "Batch size should be reduced."
@@ -170,15 +171,14 @@ class Decoder(nn.Module):
             end_ix = beg_ix + batch_size
             #Fill inputs.
             inputs = x.data[beg_ix:end_ix]
-            #Calc alignment scores for timesteps.
+            #Calc alignment scores. https://stackoverflow.com/a/50829107
             raw_weights = torch.bmm(
-                hidden[0:batch_size].unsqueeze(1),
-                hidden_seq[0:batch_size].transpose(1, 2)
+                hidden_seq[0:batch_size],
+                hidden[0:batch_size].unsqueeze(2),
             )
-            weights = F.softmax(raw_weights, dim=2)
+            weights = F.softmax(raw_weights, dim=1)
             #Calc context from alignment scores.
-            context = weights.squeeze(1).unsqueeze(2)\
-                .expand(-1, -1, hidden_seq.shape[2])\
+            context = weights.expand(-1, -1, hidden_seq.shape[2])\
                 .mul(hidden_seq[0:batch_size])\
                 .mean(dim=1)
             #Make new hidden.
@@ -195,13 +195,12 @@ class Decoder(nn.Module):
         hidden_seq = hs
         #Calc alignment scores for timesteps.
         raw_weights = torch.bmm(
-            hidden.unsqueeze(1),
-            hidden_seq.transpose(1, 2)
+            hidden_seq,
+            hidden.unsqueeze(2),
         )
-        weights = F.softmax(raw_weights, dim=2)
+        weights = F.softmax(raw_weights, dim=1)
         #Calc context from alignment scores.
-        context = weights.squeeze(1).unsqueeze(2)\
-            .expand(-1, -1, hidden_seq.shape[2])\
+        context = weights.expand(-1, -1, hidden_seq.shape[2])\
             .mul(hidden_seq)\
             .mean(dim=1)
         #Make new hidden.
@@ -217,7 +216,7 @@ class Decoder(nn.Module):
 
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
-hidden_size = 256
+hidden_size = 64
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')

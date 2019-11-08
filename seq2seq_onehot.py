@@ -72,6 +72,7 @@ class Dataset(torch.utils.data.Dataset):
                 eng, fra = line.strip().split('\t')
                 eng, fra = preprocess_fn(eng), preprocess_fn(fra)
                 self.pairs.append((fra, eng))
+        self.pairs = self.pairs[0:2048]
 
     def __len__(self):
         return len(self.pairs)
@@ -109,7 +110,7 @@ def make_x_y(inputs):
 
 
 dataset = Dataset(preprocess_fn)
-n_test = len(dataset) // 10
+n_test = len(dataset) // 4
 dataset_train, dataset_test = \
     random_split(dataset, (len(dataset) - n_test, n_test))
 assert len(dataset_test) >= batch_size, "Batch size should be reduced."
@@ -167,7 +168,7 @@ class Decoder(nn.Module):
 
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
-hidden_size = 256
+hidden_size = 64
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
