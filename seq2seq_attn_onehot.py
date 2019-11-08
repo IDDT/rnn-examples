@@ -143,49 +143,54 @@ class Encoder(nn.Module):
         return hs, h
 
 class Decoder(nn.Module):
-    def __init__(self, hidden_size, output_size):
+    def __init__(self, hidden_size, output_size, seq_len_enc=100):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
+        self.seq_len_enc = seq_len_enc
         self.rnn = nn.GRUCell(output_size, hidden_size)
+        self.attn = nn.Linear(output_size + hidden_size, seq_len_enc)
+        self.attn_combine = nn.Linear(output_size + hidden_size, output_size)
         self.lin_o = nn.Linear(hidden_size, output_size)
-        self.lin_h = nn.Linear(hidden_size * 2, hidden_size)
 
     def forward(self, x, h, hs):
-        assert type(x) == torch.nn.utils.rnn.PackedSequence
-        assert type(h) == torch.Tensor
+        assert type(x) is torch.nn.utils.rnn.PackedSequence
+        assert type(h) is torch.Tensor
         assert h.shape[1] == x.batch_sizes[0]
         assert h.shape[2] == self.hidden_size
-        #Unpack outputs which also returns it to the original ordering.
-        hidden_seq, _ = nn.utils.rnn.pad_packed_sequence(hs, batch_first=True)
-        #Arrange outputs according to packed sequence indexes.
+        #Unpack encoder outputs which also returns it to the original ordering.
+        #Enforce seq_len of encoder outputs as this attribute is fixed.
+        seq_len = self.seq_len_enc if self.seq_len_enc >= len(hs.batch_sizes) else None
+        hidden_seq, _ = nn.utils.rnn.pad_packed_sequence(hs, batch_first=True,
+            total_length=seq_len)
+        idden_seq = hidden_seq[:,0:self.seq_len_enc,:]
+        #Sort according to input packed sequence indexes.
         hidden_seq = hidden_seq[x.sorted_indices]
-        #Arrange hidden according to packed sequence indexes.
         hidden = h.squeeze(0)[x.sorted_indices]
-        #Set placeholders for the loop.
-        #inputs = torch.zeros_like(x.data[0:x.batch_sizes[0]])
+        #Set placeholders for the output.
         y = torch.empty_like(x.data)
         #Iterate through packed sequence manually.
         for i, batch_size in enumerate(x.batch_sizes.tolist()):
-            #Get data for RNN step.
+            #Get coordinates for RNN step. Used to query inputs and set outputs.
             beg_ix = x.batch_sizes[0:i].sum()
             end_ix = beg_ix + batch_size
-            #Fill inputs.
+            #Set variables. Hidden and hidden_seq are only getting smaller as
+            # we progress through packed sequence.
             inputs = x.data[beg_ix:end_ix]
-            #Calc alignment scores. https://stackoverflow.com/a/50829107
-            raw_weights = torch.bmm(
-                hidden_seq[0:batch_size],
-                hidden[0:batch_size].unsqueeze(2),
+            hidden = hidden[0:batch_size]
+            hidden_seq = hidden_seq[0:batch_size]
+            #Create attention and apply to hidden sequence.
+            attn = torch.cat((inputs, hidden), dim=1)
+            attn = F.softmax(self.attn(attn), dim=1)
+            attn = torch.bmm(
+                attn.unsqueeze(1),
+                hidden_seq
             )
-            weights = F.softmax(raw_weights, dim=1)
-            #Calc context from alignment scores.
-            context = weights.expand(-1, -1, hidden_seq.shape[2])\
-                .mul(hidden_seq[0:batch_size])\
-                .mean(dim=1)
-            #Make new hidden.
-            hidden = torch.cat((hidden[0:batch_size], context), dim=1)
-            hidden = self.lin_h(hidden)
+            attn = attn.squeeze(1)
+            #Combine attention with inputs.
+            inputs_combined = torch.cat((inputs, attn), dim=1)
+            inputs_combined = F.relu(self.attn_combine(inputs_combined))
             #Generate next hidden.
-            hidden = self.rnn(inputs[0:batch_size], hidden)
+            hidden = self.rnn(inputs_combined, hidden)
             #Generate predictions.
             y[beg_ix:end_ix] = F.log_softmax(self.lin_o(hidden), dim=1)
         return y
