@@ -142,15 +142,21 @@ class Encoder(nn.Module):
         hs, h = self.rnn(x, h0)
         return hs, h
 
+nn.Parameter(torch.FloatTensor(1, 64)).shape
+
+
 class Decoder(nn.Module):
     def __init__(self, hidden_size, output_size, seq_len_enc=100):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
         self.seq_len_enc = seq_len_enc
+        self.fc_hidden = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.fc_encoder = nn.Linear(hidden_size, hidden_size, bias=False)
+        self.weight = nn.Parameter(torch.FloatTensor(1, hidden_size))
+        self.attn_combine = nn.Linear(hidden_size * 2, hidden_size)
         self.rnn = nn.GRUCell(output_size, hidden_size)
-        self.attn = nn.Linear(output_size + hidden_size, seq_len_enc)
-        self.attn_combine = nn.Linear(output_size + hidden_size, output_size)
         self.lin_o = nn.Linear(hidden_size, output_size)
+
 
     def forward(self, x, h, hs):
         assert type(x) is torch.nn.utils.rnn.PackedSequence
@@ -158,11 +164,7 @@ class Decoder(nn.Module):
         assert h.shape[1] == x.batch_sizes[0]
         assert h.shape[2] == self.hidden_size
         #Unpack encoder outputs which also returns it to the original ordering.
-        #Enforce seq_len of encoder outputs as this attribute is fixed.
-        seq_len = self.seq_len_enc if self.seq_len_enc >= len(hs.batch_sizes) else None
-        hidden_seq, _ = nn.utils.rnn.pad_packed_sequence(hs, batch_first=True,
-            total_length=seq_len)
-        idden_seq = hidden_seq[:,0:self.seq_len_enc,:]
+        hidden_seq, _ = nn.utils.rnn.pad_packed_sequence(hs, batch_first=True)
         #Sort according to input packed sequence indexes.
         hidden_seq = hidden_seq[x.sorted_indices]
         hidden = h.squeeze(0)[x.sorted_indices]
@@ -178,14 +180,72 @@ class Decoder(nn.Module):
             inputs = x.data[beg_ix:end_ix]
             hidden = hidden[0:batch_size]
             hidden_seq = hidden_seq[0:batch_size]
-            #Create attention and apply to hidden sequence.
-            attn = torch.cat((inputs, hidden), dim=1)
-            attn = F.softmax(self.attn(attn), dim=1)
-            attn = torch.bmm(
-                attn.unsqueeze(1),
+            # Calculating Alignment Scores
+            x = torch.tanh(self.fc_hidden(hidden).unsqueeze(1) + self.fc_encoder(hidden_seq))
+            alignment_scores = x.bmm(self.weight.expand(x.shape[0], -1).unsqueeze(2))
+            # Softmaxing alignment scores to get Attention weights
+            attn_weights = F.softmax(alignment_scores, dim=1)\
+                .squeeze(2).unsqueeze(1)
+            # Multiplying the Attention weights with encoder outputs to get the context vector
+            context_vector = torch.bmm(
+                attn_weights,
                 hidden_seq
             )
-            attn = attn.squeeze(1)
+            # Concatenating context vector with embedded input word
+            output = torch.cat((
+                inputs,
+                context_vector.expand(-1, inputs.shape[1], -1)
+            ), dim=2)
+            output = self.attn_combine(output)
+            # Passing the concatenated vector as input to the LSTM cell
+
+            output.shape
+            inputs.shape
+            hidden.shape
+
+            output, hidden = selfrnn(output, hidden)
+            # Passing the LSTM output through a Linear layer acting as a classifier
+            output = F.log_softmax(self.classifier(output[0]), dim=1)
+            return output, hidden, attn_weights
+
+
+            context_vector.shape
+            hidden_seq.shape
+            inputs.shape
+
+            torch.cat((
+                inputs,
+                context_vector.expand(-1, inputs.shape[1], -1)
+            ), dim=2).shape
+
+            context_vector.shape
+            inputs.shape
+
+            attn_weights.shape
+            hidden_seq.shape
+
+            alignment_scores.shape
+
+
+
+
+
+
+
+
+            hidden_seq.shape
+            hidden.shape
+
+            alignment_scores = x.bmm(self.weight.unsqueeze(2))
+
+
+
+            attn = torch.bmm(
+                hidden_seq,
+                hidden.unsqueeze(2)
+            )
+            attn = F.softmax(attn, dim=1).expand(-1, -1, 64)
+            attn = (attn * hidden_seq).mean(dim=1)
             #Combine attention with inputs.
             inputs_combined = torch.cat((inputs, attn), dim=1)
             inputs_combined = F.relu(self.attn_combine(inputs_combined))
