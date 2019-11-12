@@ -72,7 +72,7 @@ class Dataset(torch.utils.data.Dataset):
                 eng, fra = line.strip().split('\t')
                 eng, fra = preprocess_fn(eng), preprocess_fn(fra)
                 self.pairs.append((fra, eng))
-        self.pairs = self.pairs[0:2048]
+            self.pairs = self.pairs[0:2048]
 
     def __len__(self):
         return len(self.pairs)
@@ -181,15 +181,11 @@ class Decoder(nn.Module):
             attn_weights = self.attn(attn_weights)
             attn_weights = torch.bmm(hidden_seq, attn_weights.unsqueeze(2))
             attn_weights = F.softmax(attn_weights, dim=1)
-            attn_weights = torch.bmm(attn_weights.squeeze(2).unsqueeze(1), hidden_seq)
-            # Multiplying the Attention weights with encoder outputs to get the context vector
-            context_vector = torch.bmm(
-                attn_weights,
-                hidden_seq
-            )
-            context_vector = context_vector.squeeze(1)
+            #Calculate context vector.
+            context = torch.bmm(attn_weights.squeeze(2).unsqueeze(1), hidden_seq)
+            context = context.squeeze(1)
             # Concatenating context vector with embedded input word
-            new_inputs = torch.cat((inputs, context_vector), dim=1)
+            new_inputs = torch.cat((inputs, context), dim=1)
             new_inputs = self.attn_combine(new_inputs)
             #Generate next hidden & overwrite.
             hidden = self.rnn(new_inputs, hidden)
@@ -202,21 +198,15 @@ class Decoder(nn.Module):
         hidden = h.squeeze(0)
         hidden_seq = hs
         # Calculating alignment scores.
-        alignment_scores = self.fc_hidden(hidden).unsqueeze(1) + self.fc_encoder(hidden_seq)
-        alignment_scores = torch.tanh(alignment_scores)
-        expanded_weights = self.weight.expand(inputs.shape[0], -1).unsqueeze(2)
-        alignment_scores = torch.bmm(alignment_scores, expanded_weights)
-        alignment_scores = alignment_scores.squeeze(2)
-        # Softmaxing alignment scores to get attention weights.
-        attn_weights = F.softmax(alignment_scores, dim=1).unsqueeze(1)
-        # Multiplying the Attention weights with encoder outputs to get the context vector
-        context_vector = torch.bmm(
-            attn_weights,
-            hidden_seq
-        )
-        context_vector = context_vector.squeeze(1)
+        attn_weights = torch.cat((hidden, inputs), dim=1)
+        attn_weights = self.attn(attn_weights)
+        attn_weights = torch.bmm(hidden_seq, attn_weights.unsqueeze(2))
+        attn_weights = F.softmax(attn_weights, dim=1)
+        #Calculate context vector.
+        context = torch.bmm(attn_weights.squeeze(2).unsqueeze(1), hidden_seq)
+        context = context.squeeze(1)
         # Concatenating context vector with embedded input word
-        new_inputs = torch.cat((inputs, context_vector), dim=1)
+        new_inputs = torch.cat((inputs, context), dim=1)
         new_inputs = self.attn_combine(new_inputs)
         #Generate next hidden & overwrite.
         hidden = self.rnn(new_inputs, hidden)
@@ -228,7 +218,7 @@ class Decoder(nn.Module):
 
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
-hidden_size = 16
+hidden_size = 64
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
@@ -340,12 +330,11 @@ out
 
 arrays = (np.array(all_weights) * 100).clip(max=99).astype(int)
 for a, arr in enumerate(arrays):
-    print('\n', l2[a], end=' ')
+    print('\n', out[a], end=' ')
     for c, char in enumerate(l1):
-        if arr[c] < 1:
+        if arr[c] < 25:
             print(char, end='')
         elif char != ' ':
             print(char + '\u0332', end='')
         else:
             print('_', end='')
-    print(arr)
