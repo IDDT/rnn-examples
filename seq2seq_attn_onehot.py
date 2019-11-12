@@ -142,7 +142,6 @@ class Encoder(nn.Module):
         hs, h = self.rnn(x, h0)
         return hs, h
 
-nn.Parameter(torch.FloatTensor(1, 64)).shape
 
 
 class Decoder(nn.Module):
@@ -153,10 +152,9 @@ class Decoder(nn.Module):
         self.fc_hidden = nn.Linear(hidden_size, hidden_size, bias=False)
         self.fc_encoder = nn.Linear(hidden_size, hidden_size, bias=False)
         self.weight = nn.Parameter(torch.FloatTensor(1, hidden_size))
-        self.attn_combine = nn.Linear(hidden_size * 2, hidden_size)
+        self.attn_combine = nn.Linear(hidden_size + output_size, output_size)
         self.rnn = nn.GRUCell(output_size, hidden_size)
         self.lin_o = nn.Linear(hidden_size, output_size)
-
 
     def forward(self, x, h, hs):
         assert type(x) is torch.nn.utils.rnn.PackedSequence
@@ -180,77 +178,25 @@ class Decoder(nn.Module):
             inputs = x.data[beg_ix:end_ix]
             hidden = hidden[0:batch_size]
             hidden_seq = hidden_seq[0:batch_size]
-            # Calculating Alignment Scores
-            x = torch.tanh(self.fc_hidden(hidden).unsqueeze(1) + self.fc_encoder(hidden_seq))
-            alignment_scores = x.bmm(self.weight.expand(x.shape[0], -1).unsqueeze(2))
-            # Softmaxing alignment scores to get Attention weights
-            attn_weights = F.softmax(alignment_scores, dim=1)\
-                .squeeze(2).unsqueeze(1)
+            # Calculating alignment scores.
+            alignment_scores = self.fc_hidden(hidden).unsqueeze(1) + self.fc_encoder(hidden_seq)
+            alignment_scores = torch.tanh(alignment_scores)
+            expanded_weights = self.weight.expand(inputs.shape[0], -1).unsqueeze(2)
+            alignment_scores = torch.bmm(alignment_scores, expanded_weights)
+            alignment_scores = alignment_scores.squeeze(2)
+            # Softmaxing alignment scores to get attention weights.
+            attn_weights = F.softmax(alignment_scores, dim=1).unsqueeze(1)
             # Multiplying the Attention weights with encoder outputs to get the context vector
             context_vector = torch.bmm(
                 attn_weights,
                 hidden_seq
             )
+            context_vector = context_vector.squeeze(1)
             # Concatenating context vector with embedded input word
-            output = torch.cat((
-                inputs,
-                context_vector.expand(-1, inputs.shape[1], -1)
-            ), dim=2)
-            output = self.attn_combine(output)
-            # Passing the concatenated vector as input to the LSTM cell
-
-            output.shape
-            inputs.shape
-            hidden.shape
-
-            output, hidden = selfrnn(output, hidden)
-            # Passing the LSTM output through a Linear layer acting as a classifier
-            output = F.log_softmax(self.classifier(output[0]), dim=1)
-            return output, hidden, attn_weights
-
-
-            context_vector.shape
-            hidden_seq.shape
-            inputs.shape
-
-            torch.cat((
-                inputs,
-                context_vector.expand(-1, inputs.shape[1], -1)
-            ), dim=2).shape
-
-            context_vector.shape
-            inputs.shape
-
-            attn_weights.shape
-            hidden_seq.shape
-
-            alignment_scores.shape
-
-
-
-
-
-
-
-
-            hidden_seq.shape
-            hidden.shape
-
-            alignment_scores = x.bmm(self.weight.unsqueeze(2))
-
-
-
-            attn = torch.bmm(
-                hidden_seq,
-                hidden.unsqueeze(2)
-            )
-            attn = F.softmax(attn, dim=1).expand(-1, -1, 64)
-            attn = (attn * hidden_seq).mean(dim=1)
-            #Combine attention with inputs.
-            inputs_combined = torch.cat((inputs, attn), dim=1)
-            inputs_combined = F.relu(self.attn_combine(inputs_combined))
-            #Generate next hidden.
-            hidden = self.rnn(inputs_combined, hidden)
+            new_inputs = torch.cat((inputs, context_vector), dim=1)
+            new_inputs = self.attn_combine(new_inputs)
+            #Generate next hidden & overwrite.
+            hidden = self.rnn(new_inputs, hidden)
             #Generate predictions.
             y[beg_ix:end_ix] = F.log_softmax(self.lin_o(hidden), dim=1)
         return y
