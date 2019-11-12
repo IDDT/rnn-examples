@@ -149,9 +149,7 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
         self.seq_len_enc = seq_len_enc
-        self.fc_hidden = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.fc_encoder = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.weight = nn.Parameter(torch.ones(1, hidden_size, dtype=torch.float32))
+        self.attn = nn.Linear(hidden_size + output_size, hidden_size)
         self.attn_combine = nn.Linear(hidden_size + output_size, output_size)
         self.rnn = nn.GRUCell(output_size, hidden_size)
         self.lin_o = nn.Linear(hidden_size, output_size)
@@ -179,13 +177,11 @@ class Decoder(nn.Module):
             hidden = hidden[0:batch_size]         #(batch_size, input_size)
             hidden_seq = hidden_seq[0:batch_size] #(batch_size, seq_len, input_size)
             # Calculating alignment scores.
-            alignment_scores = self.fc_hidden(hidden).unsqueeze(1) + self.fc_encoder(hidden_seq)
-            alignment_scores = torch.tanh(alignment_scores)
-            expanded_weights = self.weight.expand(inputs.shape[0], -1).unsqueeze(2)
-            alignment_scores = torch.bmm(alignment_scores, expanded_weights)
-            alignment_scores = alignment_scores.squeeze(2)
-            # Softmaxing alignment scores to get attention weights.
-            attn_weights = F.softmax(alignment_scores, dim=1).unsqueeze(1)
+            attn_weights = torch.cat((hidden, inputs), dim=1)
+            attn_weights = self.attn(attn_weights)
+            attn_weights = torch.bmm(hidden_seq, attn_weights.unsqueeze(2))
+            attn_weights = F.softmax(attn_weights, dim=1)
+            attn_weights = torch.bmm(attn_weights.squeeze(2).unsqueeze(1), hidden_seq)
             # Multiplying the Attention weights with encoder outputs to get the context vector
             context_vector = torch.bmm(
                 attn_weights,
