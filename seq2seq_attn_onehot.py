@@ -151,7 +151,7 @@ class Decoder(nn.Module):
         self.seq_len_enc = seq_len_enc
         self.fc_hidden = nn.Linear(hidden_size, hidden_size, bias=False)
         self.fc_encoder = nn.Linear(hidden_size, hidden_size, bias=False)
-        self.weight = nn.Parameter(torch.FloatTensor(1, hidden_size))
+        self.weight = nn.Parameter(torch.ones(1, hidden_size, dtype=torch.float32))
         self.attn_combine = nn.Linear(hidden_size + output_size, output_size)
         self.rnn = nn.GRUCell(output_size, hidden_size)
         self.lin_o = nn.Linear(hidden_size, output_size)
@@ -175,9 +175,9 @@ class Decoder(nn.Module):
             end_ix = beg_ix + batch_size
             #Set variables. Hidden and hidden_seq are only getting smaller as
             # we progress through packed sequence.
-            inputs = x.data[beg_ix:end_ix]
-            hidden = hidden[0:batch_size]
-            hidden_seq = hidden_seq[0:batch_size]
+            inputs = x.data[beg_ix:end_ix]        #(batch_size, input_size)
+            hidden = hidden[0:batch_size]         #(batch_size, input_size)
+            hidden_seq = hidden_seq[0:batch_size] #(batch_size, seq_len, input_size)
             # Calculating alignment scores.
             alignment_scores = self.fc_hidden(hidden).unsqueeze(1) + self.fc_encoder(hidden_seq)
             alignment_scores = torch.tanh(alignment_scores)
@@ -202,26 +202,31 @@ class Decoder(nn.Module):
         return y
 
     def predict(self, x, h, hs):
+        inputs = x
         hidden = h.squeeze(0)
         hidden_seq = hs
-        #Calc alignment scores for timesteps.
-        raw_weights = torch.bmm(
-            hidden_seq,
-            hidden.unsqueeze(2),
+        # Calculating alignment scores.
+        alignment_scores = self.fc_hidden(hidden).unsqueeze(1) + self.fc_encoder(hidden_seq)
+        alignment_scores = torch.tanh(alignment_scores)
+        expanded_weights = self.weight.expand(inputs.shape[0], -1).unsqueeze(2)
+        alignment_scores = torch.bmm(alignment_scores, expanded_weights)
+        alignment_scores = alignment_scores.squeeze(2)
+        # Softmaxing alignment scores to get attention weights.
+        attn_weights = F.softmax(alignment_scores, dim=1).unsqueeze(1)
+        # Multiplying the Attention weights with encoder outputs to get the context vector
+        context_vector = torch.bmm(
+            attn_weights,
+            hidden_seq
         )
-        weights = F.softmax(raw_weights, dim=1)
-        #Calc context from alignment scores.
-        context = weights.expand(-1, -1, hidden_seq.shape[2])\
-            .mul(hidden_seq)\
-            .mean(dim=1)
-        #Make new hidden.
-        hidden = torch.cat((hidden, context), dim=1)
-        hidden = self.lin_h(hidden)
-        #Generate next hidden.
-        hidden = self.rnn(x, hidden)
+        context_vector = context_vector.squeeze(1)
+        # Concatenating context vector with embedded input word
+        new_inputs = torch.cat((inputs, context_vector), dim=1)
+        new_inputs = self.attn_combine(new_inputs)
+        #Generate next hidden & overwrite.
+        hidden = self.rnn(new_inputs, hidden)
         #Generate predictions.
         probas = F.softmax(self.lin_o(hidden), dim=1)
-        return probas, hidden
+        return probas, hidden, attn_weights.flatten()
 
 
 
@@ -231,10 +236,10 @@ hidden_size = 64
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
-optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.001)
-# encoder.load_state_dict(torch.load('models/s2s_encoder_ao.model', map_location=device))
-# decoder.load_state_dict(torch.load('models/s2s_decoder_ao.model', map_location=device))
-# optim.load_state_dict(torch.load('models/s2s_ao.optim', map_location=device))
+optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.01)
+encoder.load_state_dict(torch.load('models/s2s_encoder_ao.model', map_location=device))
+decoder.load_state_dict(torch.load('models/s2s_decoder_ao.model', map_location=device))
+optim.load_state_dict(torch.load('models/s2s_ao.optim', map_location=device))
 
 
 
@@ -305,6 +310,7 @@ def greedy_decode(hidden, hs, max_length=100):
     out = '<'
     i = 0
     #Predicting.
+    all_weights = []
     while len(out) < max_length:
         #Make char vector.
         char_ix = char_to_ix_l2[out[i]]
@@ -312,7 +318,8 @@ def greedy_decode(hidden, hs, max_length=100):
             dtype=torch.float32, device=device, requires_grad=False)
         char_vect[0][char_ix] = 1
         #Run prediction.
-        probas, hidden = decoder.predict(char_vect, hidden, hs.clone())
+        probas, hidden, weights = decoder.predict(char_vect, hidden, hs.clone())
+        all_weights.append(weights.tolist())
         hidden = hidden.unsqueeze(0)
         #Add prediction if last char.
         if i == len(out) - 1:
@@ -322,11 +329,36 @@ def greedy_decode(hidden, hs, max_length=100):
             if char == CHAR_END:
                 break
         i += 1
-    return out
+    return out, all_weights
 
 
 l1, l2 = dataset[torch.randint(len(dataset), (1,)).item()]
 print(l1, l2)
 Xi = make_input_vect(l1, char_to_ix_l1, incl_last_char=True).unsqueeze(0).to(device)
 hs, h = encoder(Xi)
-greedy_decode(h, hs, max_length=100)
+out, all_weights = greedy_decode(h, hs, max_length=100)
+out
+
+
+arrays = np.array(all_weights * 100).astype(int).clip(max=99)
+for a, arr in enumerate(arrays):
+    print(l2[a], end=' ')
+    for c, char in enumerate(l2):
+        if arr[c] < 1:
+            print(char, end='')
+        elif char != ' ':
+            print(char + '\u0332', end='')
+        else:
+            print(' ', end='')
+    print()
+
+
+texts = []
+for c1, char1 in l1:
+    for c2, char2 in l2:
+        if values[c1] > 1:
+
+        else:
+
+
+    print(''.join([char if arr[c] < 1 else char + '\u0332' if char != ' ' else '_' for c, char in enumerate(l2)]))
