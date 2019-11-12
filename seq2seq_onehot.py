@@ -168,11 +168,11 @@ class Decoder(nn.Module):
 
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
-hidden_size = 64
+hidden_size = 16
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
-optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.001)
+optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.01)
 # encoder.load_state_dict(torch.load('models/s2s_encoder_o.model', map_location=device))
 # decoder.load_state_dict(torch.load('models/s2s_decoder_o.model', map_location=device))
 # optim.load_state_dict(torch.load('models/s2s_o.optim', map_location=device))

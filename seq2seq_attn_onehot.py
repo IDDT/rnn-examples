@@ -232,14 +232,14 @@ class Decoder(nn.Module):
 
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
-hidden_size = 64
+hidden_size = 16
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
 optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.01)
-encoder.load_state_dict(torch.load('models/s2s_encoder_ao.model', map_location=device))
-decoder.load_state_dict(torch.load('models/s2s_decoder_ao.model', map_location=device))
-optim.load_state_dict(torch.load('models/s2s_ao.optim', map_location=device))
+# encoder.load_state_dict(torch.load('models/s2s_encoder_ao.model', map_location=device))
+# decoder.load_state_dict(torch.load('models/s2s_decoder_ao.model', map_location=device))
+# optim.load_state_dict(torch.load('models/s2s_ao.optim', map_location=device))
 
 
 
@@ -337,28 +337,19 @@ print(l1, l2)
 Xi = make_input_vect(l1, char_to_ix_l1, incl_last_char=True).unsqueeze(0).to(device)
 hs, h = encoder(Xi)
 out, all_weights = greedy_decode(h, hs, max_length=100)
+
+
 out
 
 
-arrays = np.array(all_weights * 100).astype(int).clip(max=99)
+arrays = (np.array(all_weights) * 100).clip(max=99).astype(int)
 for a, arr in enumerate(arrays):
-    print(l2[a], end=' ')
-    for c, char in enumerate(l2):
+    print('\n', l2[a], end=' ')
+    for c, char in enumerate(l1):
         if arr[c] < 1:
             print(char, end='')
         elif char != ' ':
             print(char + '\u0332', end='')
         else:
-            print(' ', end='')
-    print()
-
-
-texts = []
-for c1, char1 in l1:
-    for c2, char2 in l2:
-        if values[c1] > 1:
-
-        else:
-
-
-    print(''.join([char if arr[c] < 1 else char + '\u0332' if char != ' ' else '_' for c, char in enumerate(l2)]))
+            print('_', end='')
+    print(arr)
