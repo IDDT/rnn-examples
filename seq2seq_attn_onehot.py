@@ -145,14 +145,12 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, hidden_size, output_size, seq_len_enc=100):
+    def __init__(self, hidden_size, output_size):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
-        self.seq_len_enc = seq_len_enc
         self.attn = nn.Linear(hidden_size + output_size, hidden_size)
-        self.attn_combine = nn.Linear(hidden_size + output_size, output_size)
         self.rnn = nn.GRUCell(output_size, hidden_size)
-        self.lin_o = nn.Linear(hidden_size, output_size)
+        self.lin_o = nn.Linear(hidden_size * 2, output_size)
 
     def forward(self, x, h, hs):
         assert type(x) is torch.nn.utils.rnn.PackedSequence
@@ -184,13 +182,11 @@ class Decoder(nn.Module):
             #Calculate context vector.
             context = torch.bmm(attn_weights.squeeze(2).unsqueeze(1), hidden_seq)
             context = context.squeeze(1)
-            # Concatenating context vector with embedded input word
-            new_inputs = torch.cat((inputs, context), dim=1)
-            new_inputs = self.attn_combine(new_inputs)
             #Generate next hidden & overwrite.
-            hidden = self.rnn(new_inputs, hidden)
+            hidden = self.rnn(inputs, hidden)
             #Generate predictions.
-            y[beg_ix:end_ix] = F.log_softmax(self.lin_o(hidden), dim=1)
+            output = torch.cat((context, hidden), dim=1)
+            y[beg_ix:end_ix] = F.log_softmax(self.lin_o(output), dim=1)
         return y
 
     def predict(self, x, h, hs):
@@ -205,20 +201,18 @@ class Decoder(nn.Module):
         #Calculate context vector.
         context = torch.bmm(attn_weights.squeeze(2).unsqueeze(1), hidden_seq)
         context = context.squeeze(1)
-        # Concatenating context vector with embedded input word
-        new_inputs = torch.cat((inputs, context), dim=1)
-        new_inputs = self.attn_combine(new_inputs)
         #Generate next hidden & overwrite.
-        hidden = self.rnn(new_inputs, hidden)
+        hidden = self.rnn(inputs, hidden)
         #Generate predictions.
-        probas = F.softmax(self.lin_o(hidden), dim=1)
+        output = torch.cat((context, hidden), dim=1)
+        probas = F.softmax(self.lin_o(output), dim=1)
         return probas, hidden, attn_weights.flatten()
 
 
 
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
-hidden_size = 64
+hidden_size = 16
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
@@ -328,13 +322,14 @@ out, all_weights = greedy_decode(h, hs, max_length=100)
 out
 
 
+# Plot attention
 arrays = (np.array(all_weights) * 100).clip(max=99).astype(int)
 for a, arr in enumerate(arrays):
     print('\n', out[a], end=' ')
     for c, char in enumerate(l1):
-        if arr[c] < 25:
-            print(char, end='')
-        elif char != ' ':
-            print(char + '\u0332', end='')
-        else:
-            print('_', end='')
+        char = '_' if char == ' ' else char
+        for p, percent in enumerate([20, 15, 10, 5, -1]):
+            if arr[c] > percent:
+                color = [203, 167, 131, 95, 59][p]
+                print(f"\033[38;5;{color}m{char}\033[m", end='')
+                break
