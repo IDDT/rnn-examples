@@ -72,7 +72,6 @@ class Dataset(torch.utils.data.Dataset):
                 eng, fra = line.strip().split('\t')
                 eng, fra = preprocess_fn(eng), preprocess_fn(fra)
                 self.pairs.append((fra, eng))
-        self.pairs = self.pairs[0:2048]
 
     def __len__(self):
         return len(self.pairs)
@@ -110,7 +109,7 @@ def make_x_y(inputs):
 
 
 dataset = Dataset(preprocess_fn)
-n_test = len(dataset) // 4
+n_test = len(dataset) // 20
 dataset_train, dataset_test = \
     random_split(dataset, (len(dataset) - n_test, n_test))
 assert len(dataset_test) >= batch_size, "Batch size should be reduced."
@@ -148,11 +147,10 @@ class Decoder(nn.Module):
         self.hidden_size = hidden_size
         self.rnn = nn.GRU(output_size, hidden_size, batch_first=True)
         self.lin = nn.Linear(hidden_size, output_size)
-        self.softmax = nn.LogSoftmax(dim=1)
 
     def forward(self, x, h):
-        assert type(h) == torch.Tensor
-        assert type(x) == torch.nn.utils.rnn.PackedSequence
+        assert type(h) is torch.Tensor
+        assert type(x) is torch.nn.utils.rnn.PackedSequence
         assert h.shape[1] == x.batch_sizes[0]
         assert h.shape[2] == self.hidden_size
         x, _ = self.rnn(x, h)
@@ -165,10 +163,9 @@ class Decoder(nn.Module):
         probas = F.softmax(self.lin(h), dim=2)
         return probas, h
 
-
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
-hidden_size = 16
+hidden_size = 256
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
@@ -176,6 +173,7 @@ optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.01
 # encoder.load_state_dict(torch.load('models/s2s_encoder_o.model', map_location=device))
 # decoder.load_state_dict(torch.load('models/s2s_decoder_o.model', map_location=device))
 # optim.load_state_dict(torch.load('models/s2s_o.optim', map_location=device))
+
 
 
 #%% Training.

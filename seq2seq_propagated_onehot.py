@@ -108,7 +108,7 @@ def make_x_y(inputs):
     return Xi, X, y
 
 dataset = Dataset(preprocess_fn)
-n_test = len(dataset) // 10
+n_test = len(dataset) // 20
 dataset_train, dataset_test = \
     random_split(dataset, (len(dataset) - n_test, n_test))
 assert len(dataset_test) >= batch_size, "Batch size should be reduced."
@@ -123,10 +123,8 @@ dataloader_test = DataLoader(dataset_test, collate_fn=make_x_y,
 class Encoder(nn.Module):
     def __init__(self, input_size, hidden_size):
         super(Encoder, self).__init__()
-        assert hidden_size % 2 == 0, "Hidden size must be divisible by 2."
         self.hidden_size = hidden_size
         self.rnn = nn.GRU(input_size, hidden_size, batch_first=True)
-        self.lin_compress = nn.Linear(hidden_size, hidden_size // 2)
 
     def forward(self, x):
         if type(x) == torch.nn.utils.rnn.PackedSequence:
@@ -140,29 +138,41 @@ class Encoder(nn.Module):
         h0 = torch.zeros(1, batch_size, self.hidden_size,
             dtype=dtype, device=device)
         _, h = self.rnn(x, h0)
-        return self.lin_compress(h)
+        return h
 
 class Decoder(nn.Module):
     def __init__(self, hidden_size, output_size):
         super(Decoder, self).__init__()
-        assert hidden_size % 2 == 0, "Hidden size must be divisible by 2."
         self.hidden_size = hidden_size
-        self.rnn = nn.GRU(output_size + hidden_size // 2, hidden_size,
+        self.rnn = nn.GRU(output_size + hidden_size, hidden_size,
             batch_first=True)
         self.lin = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x):
+    def forward(self, x, h):
+        assert type(h) is torch.Tensor
         assert type(x) is torch.nn.utils.rnn.PackedSequence
-        batch_size = x.batch_sizes[0].item()
-        device, dtype = x.data.device, x.data.dtype
-        h0 = torch.zeros(1, batch_size, self.hidden_size,
-            dtype=dtype, device=device)
-        x, _ = self.rnn(x, h0)
+        assert h.shape[1] == x.batch_sizes[0]
+        assert h.shape[2] == self.hidden_size
+        #Append hidden to inputs & recreate packed sequence.
+        hidden_sorted = h.squeeze(0)[x.sorted_indices]
+        hidden_arranged = []
+        for size in x.batch_sizes.tolist():
+            hidden_arranged.append(hidden_sorted[0:size])
+        hidden_arranged = torch.cat(hidden_arranged, dim=0)
+        x = nn.utils.rnn.PackedSequence(
+            torch.cat((x.data, hidden_arranged), dim=1),
+            batch_sizes=x.batch_sizes, sorted_indices=x.sorted_indices,
+            unsorted_indices=x.unsorted_indices)
+        #Process through rnn.
+        x, _ = self.rnn(x, h)
         x = self.lin(x.data)
         return F.log_softmax(x, dim=1)
 
-    def predict(self, x, h=None):
-        #Output and hidden are the same if seq_len = 1.
+    def predict(self, x, h_init, h):
+        assert type(x) is torch.Tensor
+        #x (1, 1, input_size)
+        #h & h_init (1, 1, hidden_size)
+        x = torch.cat((x, h_init), dim=2)
         _, h = self.rnn(x, h)
         probas = F.softmax(self.lin(h), dim=2)
         return probas, h
@@ -173,7 +183,7 @@ hidden_size = 256
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
-optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.001)
+optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.01)
 # encoder.load_state_dict(torch.load('models/s2s_encoder_po.model', map_location=device))
 # decoder.load_state_dict(torch.load('models/s2s_decoder_po.model', map_location=device))
 # optim.load_state_dict(torch.load('models/s2s_po.optim', map_location=device))
@@ -193,21 +203,8 @@ for epoch in range(1001):
         #Workaround for bug in pytorch==1.2.
         #Xi, X, y = Xi.to(device), X.to(device), y.to(device)
         Xi, X, y = Xi.to(device=device), X.to(device=device), y.to(device)
-        #Encode.
         h = encoder(Xi)
-        #Append hidden to inputs.
-        hidden_sorted = h.squeeze(0)[X.sorted_indices]
-        hidden_arranged = []
-        for size in X.batch_sizes:
-            hidden_arranged.append(hidden_sorted[0:size])
-        hidden_arranged = torch.cat(hidden_arranged, dim=0)
-        X = nn.utils.rnn.PackedSequence(
-            torch.cat((X.data, hidden_arranged), dim=1),
-            batch_sizes=X.batch_sizes, sorted_indices=X.sorted_indices,
-            unsorted_indices=X.unsorted_indices)
-        #Decode.
-        y_pred = decoder(X)
-        #Calc loss.
+        y_pred = decoder(X, h)
         loss = loss_fn(y_pred, y)
         optim.zero_grad()
         loss.backward()
@@ -223,21 +220,8 @@ for epoch in range(1001):
             #Workaround for bug in pytorch==1.2.
             #Xi, X, y = Xi.to(device), X.to(device), y.to(device)
             Xi, X, y = Xi.to(device=device), X.to(device=device), y.to(device)
-            #Encode.
             h = encoder(Xi)
-            #Append hidden to inputs.
-            hidden_sorted = h.squeeze(0)[X.sorted_indices]
-            hidden_arranged = []
-            for size in X.batch_sizes:
-                hidden_arranged.append(hidden_sorted[0:size])
-            hidden_arranged = torch.cat(hidden_arranged, dim=0)
-            X = nn.utils.rnn.PackedSequence(
-                torch.cat((X.data, hidden_arranged), dim=1),
-                batch_sizes=X.batch_sizes, sorted_indices=X.sorted_indices,
-                unsorted_indices=X.unsorted_indices)
-            #Decode.
-            y_pred = decoder(X)
-            #Calc loss.
+            y_pred = decoder(X, h)
             losses.append(loss_fn(y_pred, y).item())
     loss_test = torch.tensor(losses, dtype=torch.float64).mean().item()
     #Feedback.
@@ -270,8 +254,7 @@ decoder.eval()
 ix_to_char_l2 = {value: key for key, value in char_to_ix_l2.items()}
 
 def greedy_decode(hidden, max_length=100):
-    hidden_original = hidden.clone()
-    hidden = None
+    hidden_init = hidden.clone()
     out = '<'
     i = 0
     #Predicting.
@@ -281,9 +264,8 @@ def greedy_decode(hidden, max_length=100):
         char_vect = torch.zeros(1, 1, len(char_to_ix_l2),
             dtype=torch.float32, device=device, requires_grad=False)
         char_vect[0][0][char_ix] = 1
-        char_vect = torch.cat((char_vect, hidden_original), dim=2)
         #Run prediction.
-        probas, hidden = decoder.predict(char_vect, hidden)
+        probas, hidden = decoder.predict(char_vect, hidden_init, hidden)
         #Add prediction if last char.
         if i == len(out) - 1:
             topv, topi = probas.topk(1)
