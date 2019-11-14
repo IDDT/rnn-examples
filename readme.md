@@ -32,7 +32,7 @@ Translation pairs: https://www.manythings.org/anki/
 3. `seq2seq_propagated_onehot.py` [Learning Phrase Representations using RNN Encoder-Decoder for Statistical Machine Translation](https://arxiv.org/abs/1406.1078)
   - Latest hidden state of the encoder RNN is passed as initial state of the decoder RNN as well as additional context to be combined with every hidden state and output.
   - Using teacher forcing and one hot encoded vectors.
-4. `seq2seq_attn_onehot.py` [Effective Approaches to Attention-based Neural Machine Translation](https://arxiv.org/abs/1508.04025)
+4. `seq2seq_attn_onehot.py` [Neural Machine Translation by Jointly Learning to Align and Translate](https://arxiv.org/abs/1409.0473)[Effective Approaches to Attention-based Neural Machine Translation](https://arxiv.org/abs/1508.04025)
   - All hidden states of the encoder RNN is passed to the decoder RNN.
   - Decoder RNN choses what hidden state to use when generating output, therefore removing the bottleneck introduced by encoder output vector size.
   - Using one hot encoded vectors.

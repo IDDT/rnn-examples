@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, random_split
 #Settings.
 torch.manual_seed(0)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-batch_size = 1024
+batch_size = 512
 
 
 
@@ -148,7 +148,7 @@ class Decoder(nn.Module):
         self.rnn = nn.GRUCell(output_size, hidden_size)
         self.lin = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x, h, forcing_ratio=0.8):
+    def forward(self, x, h, forcing_ratio=0.9):
         assert type(x) == torch.nn.utils.rnn.PackedSequence
         assert type(h) == torch.Tensor
         assert h.shape[1] == x.batch_sizes[0]
@@ -191,8 +191,8 @@ hidden_size = 256
 encoder = Encoder(input_size, hidden_size).to(device)
 decoder = Decoder(hidden_size, output_size).to(device)
 loss_fn = nn.NLLLoss(reduction='mean')
-optim_enc = torch.optim.Adam(encoder.parameters(), lr=0.001)
-optim_dec = torch.optim.Adam(decoder.parameters(), lr=0.001)
+optim_enc = torch.optim.Adam(encoder.parameters(), lr=0.01)
+optim_dec = torch.optim.Adam(decoder.parameters(), lr=0.01)
 # encoder.load_state_dict(torch.load('models/encoder_uo.model', map_location=device))
 # decoder.load_state_dict(torch.load('models/decoder_uo.model', map_location=device))
 # optim_enc.load_state_dict(torch.load('models/encoder_uo.optim', map_location=device))
