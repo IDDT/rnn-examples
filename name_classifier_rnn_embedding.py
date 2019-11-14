@@ -9,11 +9,8 @@ import torch.nn.functional as F
 
 
 
-#GPU ready classifier with large batch using packed sequence.
-#Using RNN with dense char embeddings.
-
-
-
+#%% Settings.
+torch.manual_seed(0)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
@@ -81,15 +78,13 @@ yt = torch.tensor([cate_to_ix[x] for x in categories_t],
 
 
 #%% Make category weights.
-counts = {}
-for target in y_t:
-    target = target.item()
-    if target not in counts:
-        counts[target] = 0
-    counts[target] += 1
-weights = torch.tensor([counts.get(i, 0) for i in range(len(cate_to_ix))],
-    dtype=torch.float32, device=device, requires_grad=False)
-weights = weights.max() / weights
+indices, counts = y.unique(return_counts=True)
+indices, counts = indices.detach().tolist(), counts.detach().tolist()
+weights = torch.zeros(len(cate_to_ix), dtype=torch.float32,
+    device=device, requires_grad=False)
+for ix, count in zip(indices, counts):
+    weights[ix] = count
+weights = weights.max() / weights.clamp(min=1)
 
 
 
@@ -153,6 +148,12 @@ for epoch in range(1001):
         print(f'E {epoch} Early stopping. BEST TEST: {loss_min:.3f}')
         print(f'Took: {minutes_took:.1f}m')
         break
+
+
+
+#%% Quit here if ran as script.
+if __name__ == '__main__':
+    quit()
 
 
 
