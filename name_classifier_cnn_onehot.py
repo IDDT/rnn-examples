@@ -87,12 +87,12 @@ weights = weights.max() / weights.clamp(min=1)
 
 
 #%% Model.
-class CNNClassifier(nn.Module):
+class Classifier(nn.Module):
     def __init__(self, seq_len, input_size, output_size):
-        super(CNNClassifier, self).__init__()
-        self.conv_a = nn.Conv1d(input_size, 20, 5)
-        self.conv_b = nn.Conv1d(input_size, 20, 4)
-        self.conv_c = nn.Conv1d(input_size, 20, 3)
+        super(Classifier, self).__init__()
+        self.conv_a = nn.Conv1d(input_size, 20, 7, padding=3)
+        self.conv_b = nn.Conv1d(input_size, 20, 5, padding=2)
+        self.conv_c = nn.Conv1d(input_size, 20, 3, padding=1)
         #Max value from all outputs.
         self.lin = nn.Linear(60, output_size)
     def forward(self, x):
@@ -109,7 +109,7 @@ class CNNClassifier(nn.Module):
 
 #%% Training.
 batch_size, input_size, seq_len = X.shape
-model = CNNClassifier(seq_len, input_size, output_size).to(device)
+model = Classifier(seq_len, input_size, output_size).to(device)
 loss_fn = nn.NLLLoss(weight=weights, reduction='mean')
 loss_fn_test = nn.NLLLoss(reduction='mean')
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
