@@ -144,8 +144,7 @@ class Decoder(nn.Module):
     def __init__(self, hidden_size, output_size):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
-        self.lin_h = nn.Linear(hidden_size * 2, hidden_size)
-        self.rnn = nn.GRUCell(output_size, hidden_size)
+        self.rnn = nn.GRUCell(output_size + hidden_size, hidden_size)
         self.lin_o = nn.Linear(hidden_size * 2 + output_size, output_size)
 
     def forward(self, x, h):
@@ -168,13 +167,12 @@ class Decoder(nn.Module):
             inputs = x.data[beg_ix:end_ix]
             hidden = hidden[0:batch_size]
             context = context[0:batch_size]
-            #Merge hidden & context.
-            hidden = torch.cat((hidden, context), dim=1)
-            hidden = self.lin_h(hidden)
+            #Merge inputs & context.
+            new_inputs = torch.cat((inputs, context), dim=1)
             #Forward through RNN & overwrite next hidden.
-            hidden = self.rnn(inputs, hidden)
+            hidden = self.rnn(new_inputs, hidden)
             #Merge next hidden, context & inputs to generate predictions.
-            output = torch.cat((hidden, context, inputs), dim=1)
+            output = torch.cat((hidden, inputs, context), dim=1)
             output = self.lin_o(output)
             y[beg_ix:end_ix] = F.log_softmax(output, dim=1)
         return y
