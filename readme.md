@@ -2,7 +2,7 @@
 
 
 #### Data
-Names of different nationalities are tanken from Pytorch tutorial: https://pytorch.org/tutorials/intermediate/seq2seq_translation_tutorial.html
+Names of different nationalities are taken from Pytorch tutorial: https://pytorch.org/tutorials/intermediate/seq2seq_translation_tutorial.html
 Thai names: https://hearnames.com/pronunciations/thai-names/thai-surnames
 Translation pairs: https://www.manythings.org/anki/
 
