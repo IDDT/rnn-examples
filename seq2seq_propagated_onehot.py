@@ -144,38 +144,58 @@ class Decoder(nn.Module):
     def __init__(self, hidden_size, output_size):
         super(Decoder, self).__init__()
         self.hidden_size = hidden_size
-        self.rnn = nn.GRU(output_size + hidden_size, hidden_size,
-            batch_first=True)
-        self.lin = nn.Linear(hidden_size, output_size)
+        self.lin_h = nn.Linear(hidden_size * 2, hidden_size)
+        self.rnn = nn.GRUCell(output_size, hidden_size)
+        self.lin_o = nn.Linear(hidden_size * 2 + output_size, output_size)
 
     def forward(self, x, h):
         assert type(h) is torch.Tensor
         assert type(x) is torch.nn.utils.rnn.PackedSequence
         assert h.shape[1] == x.batch_sizes[0]
         assert h.shape[2] == self.hidden_size
-        #Append hidden to inputs & recreate packed sequence.
-        hidden_sorted = h.squeeze(0)[x.sorted_indices]
-        hidden_arranged = []
-        for size in x.batch_sizes.tolist():
-            hidden_arranged.append(hidden_sorted[0:size])
-        hidden_arranged = torch.cat(hidden_arranged, dim=0)
-        x = nn.utils.rnn.PackedSequence(
-            torch.cat((x.data, hidden_arranged), dim=1),
-            batch_sizes=x.batch_sizes, sorted_indices=x.sorted_indices,
-            unsorted_indices=x.unsorted_indices)
-        #Process through rnn.
-        x, _ = self.rnn(x, h)
-        x = self.lin(x.data)
-        return F.log_softmax(x, dim=1)
+        #Sort according to input packed sequence indexes.
+        hidden = h.squeeze(0)[x.sorted_indices]
+        #Clone initial hidden to get context.
+        context = hidden.clone()
+        #Set placeholders for the output.
+        y = torch.empty_like(x.data)
+        #Iterate through packed sequence manually.
+        for i, batch_size in enumerate(x.batch_sizes.tolist()):
+            #Get coordinates for RNN step. Used to query inputs and set outputs.
+            beg_ix = x.batch_sizes[0:i].sum()
+            end_ix = beg_ix + batch_size
+            #Set variables. Hidden & context are only getting smaller.
+            inputs = x.data[beg_ix:end_ix]
+            hidden = hidden[0:batch_size]
+            context = context[0:batch_size]
+            #Merge hidden & context.
+            hidden = torch.cat((hidden, context), dim=1)
+            hidden = self.lin_h(hidden)
+            #Forward through RNN & overwrite next hidden.
+            hidden = self.rnn(inputs, hidden)
+            #Merge next hidden, context & inputs to generate predictions.
+            output = torch.cat((hidden, context, inputs), dim=1)
+            output = self.lin_o(output)
+            y[beg_ix:end_ix] = F.log_softmax(output, dim=1)
+        return y
 
     def predict(self, x, h_init, h):
-        assert type(x) is torch.Tensor
-        #x (1, 1, input_size)
-        #h & h_init (1, 1, hidden_size)
-        x = torch.cat((x, h_init), dim=2)
-        _, h = self.rnn(x, h)
-        probas = F.softmax(self.lin(h), dim=2)
-        return probas, h
+        #x:torch.tensor      (batch_size, input_size)
+        #h_init:torch.tensor (batch_size, input_size)
+        #h:torch.tensor      (batch_size, input_size)
+        inputs = x
+        hidden = h
+        context = h_init
+        #Merge hidden & context.
+        hidden = torch.cat((hidden, context), dim=1)
+        hidden = self.lin_h(hidden)
+        #Forward through RNN & overwrite next hidden.
+        hidden = self.rnn(inputs, hidden)
+        #Merge next hidden, context & inputs to generate predictions.
+        output = torch.cat((hidden, context, inputs), dim=1)
+        output = self.lin_o(output)
+        probas = F.softmax(output, dim=1)
+        return probas, hidden
 
 input_size = len(char_to_ix_l1)
 output_size = len(char_to_ix_l2)
@@ -254,22 +274,22 @@ decoder.eval()
 ix_to_char_l2 = {value: key for key, value in char_to_ix_l2.items()}
 
 def greedy_decode(hidden, max_length=100):
-    hidden_init = hidden.clone()
-    out = '<'
-    i = 0
+    h = hidden.squeeze(0)
+    h_init = h.clone()
     #Predicting.
+    i, out = 0, '<'
     while len(out) < max_length:
         #Make char vector.
         char_ix = char_to_ix_l2[out[i]]
-        char_vect = torch.zeros(1, 1, len(char_to_ix_l2),
+        char_vect = torch.zeros(1, len(char_to_ix_l2),
             dtype=torch.float32, device=device, requires_grad=False)
-        char_vect[0][0][char_ix] = 1
+        char_vect[0][char_ix] = 1
         #Run prediction.
-        probas, hidden = decoder.predict(char_vect, hidden_init, hidden)
-        #Add prediction if last char.
+        probas, h = decoder.predict(char_vect, h_init, h)
+        #Add prediction if in the end of the string.
         if i == len(out) - 1:
-            topv, topi = probas.topk(1)
-            char = ix_to_char_l2[topi[0].item()]
+            topi = probas.topk(1)[1].item()
+            char = ix_to_char_l2[topi]
             out += char
             if char == CHAR_END:
                 break
