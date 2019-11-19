@@ -110,7 +110,8 @@ class BasicAttnClassifier(nn.Module):
         #Convert list of itegers into dense char vectors.
         x = self.char_emb(x)
         #Create positional embeddings.
-        xp = torch.arange(x.shape[1]).expand(x.shape[0], -1)
+        xp = torch.arange(x.shape[1], device=x.device)\
+            .expand(x.shape[0], -1)
         xp = self.pos_emb(xp)
         #Concatenate.
         x = torch.cat((x, xp), dim=2)
