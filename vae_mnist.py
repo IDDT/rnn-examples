@@ -72,8 +72,8 @@ optim = torch.optim.Adam(model.parameters(), lr=1e-3)
 
 def vae_loss(x_pred, x, z_mean, z_log_sigma):
     reconstruction_loss = F.binary_cross_entropy(x_pred, x, reduction='sum')
-    kl_loss = - 0.5 * torch.sum(1 + z_log_sigma - z_mean.pow(2) - torch.exp(z_log_sigma))
-    #kl_loss = 0.5 * torch.sum(log_sigma.exp() + z_mean.pow(2) - 1.0 - log_sigma)
+    kl_loss = - 0.5 * torch.sum(1 + z_log_sigma - z_mean.pow(2) - z_log_sigma.exp())
+    #kl_loss = 0.5 * torch.sum(z_log_sigma.exp() + z_mean.pow(2) - 1.0 - z_log_sigma)
     return reconstruction_loss + kl_loss
 
 
