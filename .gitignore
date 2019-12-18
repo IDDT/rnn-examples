@@ -1,2 +1,3 @@
 /models/*
 !/models/.keep
+/data/mnist/

@@ -1,3 +1,4 @@
+import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,19 +8,17 @@ import matplotlib.pyplot as plt
 
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-
 #%% Init data.
-BATCH_SIZE = 124
+batch_size = 128
 transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-train_dataset = torchvision.datasets.MNIST('./data/mnist', train=True,
+dataset_train = torchvision.datasets.MNIST('./data/mnist', train=True,
     download=True, transform=transforms)
-test_dataset = torchvision.datasets.MNIST('./data/mnist', train=False,
+dataset_test = torchvision.datasets.MNIST('./data/mnist', train=False,
     download=True, transform=transforms)
-train_iterator = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-test_iterator = DataLoader(test_dataset, batch_size=BATCH_SIZE, shuffle=False)
+dataloader_train = DataLoader(dataset_train, batch_size=batch_size,
+    shuffle=True, drop_last=False, num_workers=0)
+dataloader_test = DataLoader(dataset_test, batch_size=batch_size,
+    shuffle=False, drop_last=False, num_workers=0)
 
 
 
@@ -31,6 +30,7 @@ class Encoder(nn.Module):
         self.lin_mean = nn.Linear(hidden_dim, z_dim)
         self.lin_log_sigma = nn.Linear(hidden_dim, z_dim)
     def forward(self, x):
+        #Encode input into z and z_distribution.
         h = F.relu(self.lin_h(x))
         z_mean = self.lin_mean(h)
         z_log_sigma = self.lin_log_sigma(h)
@@ -42,6 +42,7 @@ class Decoder(nn.Module):
         self.lin_h = nn.Linear(z_dim, hidden_dim)
         self.lin_o = nn.Linear(hidden_dim, output_dim)
     def forward(self, x):
+        #Decode z into input.
         h = F.relu(self.lin_h(x))
         return torch.sigmoid(self.lin_o(h))
 
@@ -55,81 +56,103 @@ class VAE(nn.Module):
         epsilon = torch.randn_like(z_log_sigma)
         return z_mean + torch.exp(z_log_sigma / 2) * epsilon
     def forward(self, x):
+        #Encode, sample from distribution, decode.
         z_mean, z_log_sigma = self.encoder(x)
         x_pred = self.decoder(self.sample_z(z_mean, z_log_sigma))
         return x_pred, z_mean, z_log_sigma
 
+class VAELoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, x_pred, x, z_mean, z_log_sigma):
+        r_loss = F.binary_cross_entropy(x_pred, x, reduction='none').sum(dim=1)
+        kl_loss = 0.5 * (z_log_sigma.exp() + z_mean.pow(2) - 1 - z_log_sigma).sum(axis=1)
+        return (r_loss + kl_loss).mean()
 
-#%%
+
+
+#%% Init model.
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 input_dim = output_dim = 28 * 28
-hidden_dim = 128
-z_dim = 2
-
+hidden_dim, z_dim = 256, 2
+loss_fn = VAELoss()
 encoder = Encoder(input_dim, hidden_dim, z_dim)
 decoder = Decoder(z_dim, hidden_dim, output_dim)
 model = VAE(encoder, decoder).to(device)
 optim = torch.optim.Adam(model.parameters(), lr=1e-3)
-
-def vae_loss(x_pred, x, z_mean, z_log_sigma):
-    reconstruction_loss = F.binary_cross_entropy(x_pred, x, reduction='sum')
-    kl_loss = - 0.5 * torch.sum(1 + z_log_sigma - z_mean.pow(2) - z_log_sigma.exp())
-    #kl_loss = 0.5 * torch.sum(z_log_sigma.exp() + z_mean.pow(2) - 1.0 - z_log_sigma)
-    return reconstruction_loss + kl_loss
+# model.load_state_dict(torch.load('models/vae_mnist.model', map_location=device))
+# optim.load_state_dict(torch.load('models/vae_mnist.optim', map_location=device))
 
 
 
-#%%
-best_test_loss = float('inf')
-for e in range(50):
+#%% Train.
+max_unimproved_epochs, unimproved_epochs = 5, 0
+loss_min = float('inf')
+for epoch in range(1000):
+    start_time = time.time()
     #Training.
     model.train()
-    train_loss = 0
-    for X, _ in train_iterator:
+    losses = []
+    for X, _ in dataloader_train:
         X = X.reshape(-1, 28 * 28).to(device)
         optim.zero_grad()
         X_pred, z_mean, z_log_sigma = model(X)
-        loss = vae_loss(X_pred, X, z_mean, z_log_sigma)
+        loss = loss_fn(X_pred, X, z_mean, z_log_sigma)
         loss.backward()
-        train_loss += loss.item()
+        losses.append(loss.item())
         optim.step()
+    loss_train = sum(losses) / len(losses)
     #Testing.
     model.eval()
-    test_loss = 0
+    losses = []
     with torch.no_grad():
-        for X, _ in test_iterator:
+        for X, _ in dataloader_test:
             X = X.reshape(-1, 28 * 28).to(device)
             X_pred, z_mean, z_log_sigma = model(X)
-            loss = vae_loss(X_pred, X, z_mean, z_log_sigma)
-            test_loss += loss.item()
+            loss = loss_fn(X_pred, X, z_mean, z_log_sigma)
+            losses.append(loss.item())
+    loss_test = sum(losses) / len(losses)
     #Feedback.
-    train_loss /= len(train_dataset)
-    test_loss /= len(test_dataset)
-    print(f'Epoch {e}, Train Loss: {train_loss:.2f}, Test Loss: {test_loss:.2f}')
-    #Early stopping.
-    if best_test_loss > test_loss:
-        best_test_loss = test_loss
-        patience_counter = 1
-    else:
-        patience_counter += 1
-    if patience_counter > 3:
+    print(f'E {epoch} TRAIN: {loss_train:.3f} TEST: {loss_test:.3f}'
+        f' TOOK: {time.time() - start_time:.1f}s')
+    #Save state & early stopping.
+    unimproved_epochs += 1
+    if loss_test < loss_min:
+        torch.save(model.state_dict(), 'models/vae_mnist.model')
+        torch.save(optim.state_dict(), 'models/vae_mnist.optim')
+        loss_min = loss_test
+        unimproved_epochs = 0
+    if unimproved_epochs > max_unimproved_epochs:
+        print(f'E {epoch} Early stopping. BEST TEST: {loss_min:.3f}')
         break
 
 
 
+#%% Quit here if ran as script.
+if __name__ == '__main__':
+    quit()
 
 
-#%% sample and generate a image
+
+#%% Sample and generate a image
 model.eval()
-z = torch.randn(1, z_dim, device=device)
-img = model.decoder(z).squeeze(0).reshape(28, 28)\
-    .detach().cpu().numpy()
-plt.figure()
-plt.imshow(img, cmap='gray')
-plt.show()
+indices = torch.randint(0, len(dataloader_test), (10,)).tolist()
+X = [dataset_test[i][0] for i in indices]
+X = torch.cat(X, dim=0).reshape(-1, input_dim).to(device)
+with torch.no_grad():
+    X_pred = model(X)[0]
+X, X_pred = X.cpu(), X_pred.cpu()
+f, axarr = plt.subplots(2, 10, figsize=(12, 2))
+plt.xticks([], [])
+for i in range(len(X)):
+    axarr[0][i].imshow(X[i].reshape(28, 28), cmap='gray')
+    axarr[1][i].imshow(X_pred[i].reshape(28, 28), cmap='gray')
+    axarr[0][i].axis('off')
+    axarr[1][i].axis('off')
 
 
 
-#%% Show all.
+#%% Show distribution.
 model.eval()
 z_mean_arr, labels_arr = [], []
 with torch.no_grad():
@@ -138,7 +161,7 @@ with torch.no_grad():
         _, z_mean, _ = model(X)
         z_mean_arr.append(z_mean)
         labels_arr.append(label)
-z_mean = torch.cat(z_mean_arr, dim=0).detach().cpu()
+z_mean = torch.cat(z_mean_arr, dim=0).cpu()
 labels = torch.cat(labels_arr, dim=0)
 plt.figure(figsize=(10, 10))
 plt.scatter(z_mean[:, 0], z_mean[:, 1], c=labels)
@@ -147,9 +170,9 @@ plt.show()
 
 
 
-#%% 2d manifold
+#%% 2d manifold.
 model.eval()
-digit_size, n, radius = 28, 15, 5
+digit_size, n, radius = 28, 15, 2
 figure = torch.empty((digit_size * n, digit_size * n))
 grid_x = torch.linspace(-radius, radius, n)
 grid_y = torch.linspace(-radius, radius, n)
@@ -161,5 +184,5 @@ for ix, x in enumerate(grid_x):
         y_low, y_high = iy * digit_size, (iy + 1) * digit_size
         figure[x_low:x_high, y_low:y_high] = digit
 plt.figure(figsize=(10, 10))
-plt.imshow(figure.detach().numpy())
+plt.imshow(figure.detach().numpy(), cmap='gray')
 plt.show()
