@@ -8,8 +8,14 @@ import matplotlib.pyplot as plt
 
 
 
-#%% Init data.
+#Settings.
+torch.manual_seed(0)
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 batch_size = 128
+
+
+
+#%% Init data.
 transforms = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
 dataset_train = torchvision.datasets.MNIST('./data/mnist', train=True,
     download=True, transform=transforms)
@@ -72,14 +78,13 @@ class VAELoss(nn.Module):
 
 
 #%% Init model.
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 input_dim = output_dim = 28 * 28
 hidden_dim, z_dim = 256, 2
 loss_fn = VAELoss()
 encoder = Encoder(input_dim, hidden_dim, z_dim)
 decoder = Decoder(z_dim, hidden_dim, output_dim)
 model = VAE(encoder, decoder).to(device)
-optim = torch.optim.Adam(model.parameters(), lr=1e-3)
+optim = torch.optim.Adadelta(model.parameters())
 # model.load_state_dict(torch.load('models/vae_mnist.model', map_location=device))
 # optim.load_state_dict(torch.load('models/vae_mnist.optim', map_location=device))
 
@@ -156,7 +161,7 @@ for i in range(len(X)):
 model.eval()
 z_mean_arr, labels_arr = [], []
 with torch.no_grad():
-    for i, (X, label) in enumerate(test_iterator):
+    for i, (X, label) in enumerate(dataloader_test):
         X = X.reshape(-1, 28 * 28).to(device)
         _, z_mean, _ = model(X)
         z_mean_arr.append(z_mean)
@@ -179,7 +184,7 @@ grid_y = torch.linspace(-radius, radius, n)
 for ix, x in enumerate(grid_x):
     for iy, y in enumerate(grid_y):
         z = torch.tensor([[x, y]]).to(device)
-        digit = decoder(z).squeeze(0).reshape(digit_size, digit_size)
+        digit = model.decoder(z).squeeze(0).reshape(digit_size, digit_size)
         x_low, x_high = ix * digit_size, (ix + 1) * digit_size
         y_low, y_high = iy * digit_size, (iy + 1) * digit_size
         figure[x_low:x_high, y_low:y_high] = digit
