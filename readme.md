@@ -1,4 +1,4 @@
-# Practical, short, batched, gpu-ready, self-contained implementations of various NLP tasks using Pytorch 1.3.0
+# Practical, short, batched, gpu-ready, self-contained implementations of various machine learning tasks using Pytorch 1.3.0
 
 
 #### Data
@@ -36,3 +36,9 @@ Translation pairs: https://www.manythings.org/anki/
   - All hidden states of the encoder RNN is passed to the decoder RNN.
   - Decoder RNN choses what hidden state to use when generating output, therefore removing the bottleneck introduced by encoder output vector size.
   - Using one hot encoded vectors.
+
+#### Variational autoencoders.
+1. `vae_mnist.py`
+  - Reconstruct MNIST images through fully connected network.
+2. `vae_conv_mnist.py`
+  - Reconstruct MNIST images through layered convolutions.
