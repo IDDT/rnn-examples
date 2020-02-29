@@ -91,83 +91,56 @@ dataloader_test = DataLoader(dataset_test, collate_fn=make_x_y,
 
 #%% Make model.
 INPUT_SIZE = len(char_to_ix)
-HIDDEN_SIZE = 250
-Z_DIM = 2
+HIDDEN_SIZE = 100
 
-class VAE(nn.Module):
+class Encoder(nn.Module):
     def __init__(self):
         super().__init__()
-        self.hidden_size = HIDDEN_SIZE
         emb_dim = 100
-        #Shared embedding.
         self.emb = nn.Embedding(INPUT_SIZE, emb_dim)
-        #Encoder layers.
-        self.rnn_enc = nn.GRU(emb_dim, HIDDEN_SIZE, batch_first=True, bidirectional=True)
-        self.lin_mean = nn.Linear(HIDDEN_SIZE * 2, Z_DIM)
-        self.lin_log_sigma = nn.Linear(HIDDEN_SIZE * 2, Z_DIM)
-        #Decoder layers.
-        self.lin_h = nn.Linear(Z_DIM, HIDDEN_SIZE)
-        self.rnn_dec = nn.GRU(emb_dim, HIDDEN_SIZE, batch_first=True)
+        self.rnn = nn.GRU(emb_dim, HIDDEN_SIZE, batch_first=True)
+    def forward(self, x):
+        if type(x) is torch.nn.utils.rnn.PackedSequence:
+            x = nn.utils.rnn.PackedSequence(self.emb(x.data),
+                batch_sizes=x.batch_sizes, sorted_indices=x.sorted_indices,
+                unsorted_indices=x.unsorted_indices)
+        elif type(x) is torch.Tensor:
+            assert len(x) == 1
+            x = self.emb(x)
+        else:
+            raise ValueError()
+        _, h = self.rnn(x)
+        return h
+
+class Decoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        emb_dim = 100
+        self.emb = nn.Embedding(INPUT_SIZE, emb_dim)
+        self.rnn = nn.GRU(emb_dim, HIDDEN_SIZE, batch_first=True)
         self.lin_o = nn.Linear(HIDDEN_SIZE, INPUT_SIZE)
-
-    def encode(self, x):
-        assert type(x) == torch.nn.utils.rnn.PackedSequence
-        batch_size = x.batch_sizes[0]
+    def forward(self, x, h):
+        assert type(x) is torch.nn.utils.rnn.PackedSequence
         x = nn.utils.rnn.PackedSequence(self.emb(x.data),
             batch_sizes=x.batch_sizes, sorted_indices=x.sorted_indices,
             unsorted_indices=x.unsorted_indices)
-        _, h = self.rnn_enc(x)
-        h = h.reshape(batch_size, -1)
-        z_mean = self.lin_mean(h)
-        z_log_sigma = self.lin_log_sigma(h)
-        return z_mean, z_log_sigma
-
-    @staticmethod
-    def sample_z(z_mean, z_log_sigma):
-        epsilon = torch.randn_like(z_log_sigma)
-        return z_mean + torch.exp(z_log_sigma / 2) * epsilon
-
-    def decode(self, z, x):
-        assert type(x) == torch.nn.utils.rnn.PackedSequence
-        assert z.shape[0] == x.batch_sizes[0]
-        x = nn.utils.rnn.PackedSequence(self.emb(x.data),
-            batch_sizes=x.batch_sizes, sorted_indices=x.sorted_indices,
-            unsorted_indices=x.unsorted_indices)
-        h = self.lin_h(z).unsqueeze(0)
-        x, _ = self.rnn_dec(x, h)
+        x, _ = self.rnn(x, h)
         x = self.lin_o(x.data)
         return F.log_softmax(x, dim=1)
-
-    def forward(self, x):
-        z_mean, z_log_sigma = self.encode(x)
-        z = self.sample_z(z_mean, z_log_sigma)
-        y_pred = self.decode(z, x)
-        return y_pred, z_mean, z_log_sigma
-
     def predict(self, x, h):
-        #Output and hidden are the same if seq_len = 1.
+        assert type(x) is torch.Tensor
         x = self.emb(x)
-        _, h = self.rnn_dec(x, h)
-        probas = F.softmax(self.lin_o(h), dim=2)
-        return probas, h
-
-class VAELoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.loss_fn = nn.NLLLoss(reduction='mean')
-    def forward(self, y_pred, y, z_mean, z_log_sigma):
-        nll_loss = self.loss_fn(y_pred, y)
-        kl_loss = 0.5 * (z_log_sigma.exp() + z_mean.pow(2) - 1 - z_log_sigma).sum(axis=1)
-        #print(f'{nll_loss.mean().item():.4f}, {kl_loss.mean().item():.4f}')
-        return (nll_loss + kl_loss).mean()
-
+        x, h_n = self.rnn(x, h)
+        x = self.lin_o(x)
+        return F.log_softmax(x, dim=2), h_n
 
 
 #%% Init model.
-model = VAE().to(device)
+encoder = Encoder().to(device)
+decoder = Decoder().to(device)
 # model.load_state_dict(torch.load('models/name_vae.model', map_location=device))
-loss_fn = VAELoss()
-optim = torch.optim.Adam(model.parameters(), lr=0.001)
+loss_fn = nn.NLLLoss(reduction='mean')
+optim = torch.optim.Adam((*encoder.parameters(), *decoder.parameters()), lr=0.001)
 
 
 
@@ -177,12 +150,14 @@ max_unimproved_epochs, unimproved_epochs = 15, 0
 for epoch in range(1, 1000):
     start_time = time.time()
     #Training.
-    model.train()
+    encoder.train()
+    decoder.train()
     losses = []
     for X, y in dataloader_train:
         X, y = X.to(device), y.to(device)
-        y_pred, z_mean, z_log_sigma = model(X)
-        loss = loss_fn(y_pred, y, z_mean, z_log_sigma)
+        h = encoder(X)
+        y_pred = decoder(X, h)
+        loss = loss_fn(y_pred, y)
         assert torch.isfinite(loss)
         optim.zero_grad()
         loss.backward()
@@ -190,29 +165,25 @@ for epoch in range(1, 1000):
         losses.append(loss.item())
     loss_train = sum(losses) / len(losses)
     #Testing.
-    model.eval()
+    encoder.eval()
+    decoder.eval()
     losses = []
-    z_mean_arr = []
     with torch.no_grad():
         for X, y in dataloader_test:
             X, y = X.to(device), y.to(device)
-            y_pred, z_mean, z_log_sigma = model(X)
-            loss = loss_fn(y_pred, y, z_mean, z_log_sigma)
+            h = encoder(X)
+            y_pred = decoder(X, h)
+            loss = loss_fn(y_pred, y)
             assert torch.isfinite(loss)
             losses.append(loss.item())
-            z_mean_arr += z_mean.tolist()
     loss_test = sum(losses) / len(losses)
     #Feedback.
     print(f'E{epoch} TRAIN:{loss_train:.5f} TEST:{loss_test:.5f}'
         f' TOOK:{time.time() - start_time:.1f}s')
-    plt.scatter(*np.hsplit(np.array(z_mean_arr), 2), s=0.5)
-    plt.xlim((-0.25, 0.25))
-    plt.ylim((-0.25, 0.25))
-    plt.show()
     #Save state & early stopping.
     unimproved_epochs += 1
     if loss_test < loss_min:
-        torch.save(model.state_dict(), 'models/name_vae.model')
+        #torch.save(model.state_dict(), 'models/name_vae.model')
         loss_min = loss_test
         unimproved_epochs = 0
     if unimproved_epochs > max_unimproved_epochs:
@@ -221,25 +192,9 @@ for epoch in range(1, 1000):
 
 
 
-#%% Print distribution.
-model.eval()
-z_mean_arr, z_log_sigma_arr = [], []
-with torch.no_grad():
-    for X, y in dataloader_test:
-        X, y = X.to(device), y.to(device)
-        z_mean, _ = model.encode(X)
-        z_mean_arr += z_mean.tolist()
-        z_log_sigma_arr += z_log_sigma.tolist()
-
-
-plt.scatter(*np.hsplit(np.array(z_mean_arr), 2), s=0.5)
-
-plt.scatter(*np.hsplit(np.array(z_log_sigma_arr), 2), s=0.5)
-
-
-
 #%% Sample.
-model.eval()
+encoder.eval()
+decoder.eval()
 ix_to_char = {ix:char for char, ix in char_to_ix.items()}
 
 def make_input(document:str) -> torch.tensor:
@@ -248,7 +203,6 @@ def make_input(document:str) -> torch.tensor:
         requires_grad=False)
 
 def greedy_decode(hidden, max_length=100):
-    hidden = decoder.lin_h(hidden)
     out = '<'
     i = 0
     with torch.no_grad():
@@ -261,7 +215,7 @@ def greedy_decode(hidden, max_length=100):
             probas, hidden = decoder.predict(char_vect, hidden)
             #Add prediction if last char.
             if i == len(out) - 1:
-                topv, topi = probas.topk(1)
+                topv, topi = probas.squeeze().topk(1)
                 char = ix_to_char[topi[0].item()]
                 out += char
                 if char == '>':
@@ -269,11 +223,5 @@ def greedy_decode(hidden, max_length=100):
             i += 1
     return out
 
-with torch.no_grad():
-    z_mean, z_log_sigma = encoder(make_input('<Daniel').unsqueeze(0))
-    hidden = model.sample_z(z_mean, z_log_sigma).unsqueeze(0)
-greedy_decode(hidden, max_length=100)
-
-
-greedy_decode(torch.tensor([[[6.0, -7.5]]]).to(device))
-hidden
+h = encoder(make_input('<Orlov').unsqueeze(0))
+greedy_decode(h, max_length=100)
