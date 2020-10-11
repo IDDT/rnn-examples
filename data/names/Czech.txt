@@ -262,7 +262,6 @@ Markytan
 Matejka
 Matjeka
 Matocha
-Maxa/B
 Mayer
 Meier
 Merta
@@ -358,7 +357,6 @@ Pudel
 Purdes
 Quasninsky
 Raffel
-Rafaj1
 Ransom
 Rezac
 Riedel
@@ -471,7 +469,6 @@ Trnkova
 Uerling
 Uhlik
 Urbanek
-Urbanek1
 Urbanovska
 Urista
 Ustohal
@@ -500,7 +497,6 @@ Wiesner
 Wizner
 Weiss
 Werlla
-Whitmire1
 Widerlechner
 Wilchek
 Wondracek
