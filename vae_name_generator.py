@@ -113,7 +113,10 @@ class Model(nn.Module):
             x = self.emb(x)
         else:
             raise ValueError('Unknown tensor type.')
-        return self.lin_h(self._encode(x)[0])
+        return self._encode(x)[0]
+
+    def sample(self, h):
+        return self.lin_h(h)
 
     def decode(self, x, h):
         x = self.emb(x)
@@ -161,7 +164,7 @@ for epoch in range(1000):
     model.train()
     losses = []
     for X, y in dataloader_train:
-        optim.zero_grad()
+        X, y = X.to(device), y.to(device)
         X_pred, mu, log_sigma = model(X)
         loss, _, _ = loss_fn(X_pred, y, mu, log_sigma)
         optim.zero_grad()
@@ -174,6 +177,7 @@ for epoch in range(1000):
     losses, rec_arr, div_arr = [], [], []
     with torch.no_grad():
         for X, y in dataloader_test:
+            X, y = X.to(device), y.to(device)
             X_pred, mu, log_sigma = model(X)
             loss, rec_loss, div_loss = loss_fn(X_pred, y, mu, log_sigma)
             losses.append(loss)
@@ -203,52 +207,69 @@ if __name__ == '__main__':
     quit()
 
 
-
+#%% Init model.
 device = torch.device('cpu')
 model = Model(len(dataset.char_to_ix)).to(device)
 model.load_state_dict(torch.load('models/vae_name_gen.model', map_location=device))
 model.eval()
 
 
-def predict(name, max_len=50):
+#%% Reconstruct & interpolate.
+def reconstruct(name, max_len=50):
     device = torch.device('cpu')
     inp = torch.tensor([dataset.char_to_ix[c] for c in CHAR_START + name],
         dtype=torch.int64, device=device, requires_grad=False).unsqueeze(0)
-    h = model.encode(inp).unsqueeze(0)
-    out = ''
-    x = torch.tensor([[dataset.char_to_ix[CHAR_START]]],
-        dtype=torch.int64, device=device, requires_grad=False)
-    while True:
-        x, h = model.decode(x, h)
-        x = x.argmax(dim=2)
-        out += dataset.ix_to_char[x.item()]
-        if out[-1] == CHAR_END or len(out) > max_len:
-            break
-    return out
+    with torch.no_grad():
+        h = model.sample(model.encode(inp)).unsqueeze(0)
+        out = ''
+        x = torch.tensor([[dataset.char_to_ix[CHAR_START]]],
+            dtype=torch.int64, device=device, requires_grad=False)
+        while len(out) < max_len:
+            x, h = model.decode(x, h)
+            x = x.argmax(dim=2)
+            out += dataset.ix_to_char[x.item()]
+            if out[-1] == CHAR_END:
+                return out[:-1]
+        return out
 
+def interpolate(name_a, name_b, n_items=10, max_len=50):
+    device = torch.device('cpu')
+    inp_a = torch.tensor([dataset.char_to_ix[c] for c in CHAR_START + name_a],
+        dtype=torch.int64, device=device, requires_grad=False).unsqueeze(0)
+    inp_b = torch.tensor([dataset.char_to_ix[c] for c in CHAR_START + name_b],
+        dtype=torch.int64, device=device, requires_grad=False).unsqueeze(0)
+    with torch.no_grad():
+        h_a = model.encode(inp_a)
+        h_b = model.encode(inp_b)
+        results = []
+        for mul in torch.linspace(0, 1, n_items):
+            h = model.sample((h_a * (1 - mul) + h_b * mul)).unsqueeze(0)
+            out = ''
+            x = torch.tensor([[dataset.char_to_ix[CHAR_START]]],
+                dtype=torch.int64, device=device, requires_grad=False)
+            while len(out) < max_len:
+                x, h = model.decode(x, h)
+                x = x.argmax(dim=2)
+                out += dataset.ix_to_char[x.item()]
+                if out[-1] == CHAR_END:
+                    out = out[:-1]
+                    break
+            results.append(out)
+    return results
 
-predict('dave')
-#predict_range('dave', 'pavel')
-
+reconstruct('pavel')
+interpolate('pavel', 'auttenberg')
 
 
 #%% Show distribution.
-model.eval()
-z_mean_arr, labels_arr = [], []
+mu_arr = []
 with torch.no_grad():
-    for i, (X_i, _, _, label) in enumerate(dataloader_test):
-        X_i = X_i.to(device)
-        z_mean, _ = model.encoder(X_i)
-        z_mean_arr.append(z_mean)
-        labels_arr.extend(label)
-
-z_mean = torch.cat(z_mean_arr, dim=0).cpu()
-country_to_ix = {c:i for i, c in enumerate(set(labels_arr))}
-labels = [country_to_ix[c] for c in labels_arr]
-
-# #%%Plot scatter PCA
-pca = PCA(n_components=2, whiten=True).fit(z_mean)
-z_mean = pca.transform(z_mean)
-# z_mean = TSNE(n_components=3).fit_transform(z_mean)
-plt.scatter(z_mean[:, 0], z_mean[:, 1], c=labels, cmap='plasma', s=1)
-#plt.savefig("out.png", dpi=400)
+    for X, _ in dataloader_train:
+        X = X.to(device)
+        mu_arr.append(model.encode(X))
+    for X, _ in dataloader_test:
+        X = X.to(device)
+        mu_arr.append(model.encode(X))
+mu_arr = torch.cat(mu_arr, dim=0).cpu().numpy()
+mu_pca = PCA(n_components=2, whiten=True).fit_transform(mu_arr)
+plt.scatter(mu_pca[:, 0], mu_pca[:, 1], s=0.1)
