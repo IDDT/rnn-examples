@@ -58,7 +58,7 @@ class Dataset(torch.utils.data.Dataset):
         X = nn.utils.rnn.pad_sequence([i[:-1] for i in inputs],
             batch_first=True)[X_idx]
         Z = nn.utils.rnn.pack_padded_sequence(X, X_len - 1, batch_first=True)
-        Xy = nn.utils.rnn.pad_sequence([i[1:] for i in inputs],
+        X = nn.utils.rnn.pad_sequence([i[1:] for i in inputs],
             batch_first=True)[X_idx]
         Zy = nn.utils.rnn.pack_padded_sequence(X, X_len - 1, batch_first=True)
         return Z, Zy.data
