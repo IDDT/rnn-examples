@@ -55,19 +55,16 @@ class Dataset(torch.utils.data.Dataset):
         X_len, X_idx = torch.tensor([len(idx) for idx in inputs],
             dtype=torch.int16, device=device, requires_grad=False)\
             .sort(descending=True)
-
         X = nn.utils.rnn.pad_sequence([i[:-1] for i in inputs],
             batch_first=True)[X_idx]
         Z = nn.utils.rnn.pack_padded_sequence(X, X_len - 1, batch_first=True)
-
-        X = nn.utils.rnn.pad_sequence([i[1:] for i in inputs],
+        Xy = nn.utils.rnn.pad_sequence([i[1:] for i in inputs],
             batch_first=True)[X_idx]
-        Zo = nn.utils.rnn.pack_padded_sequence(X, X_len - 1, batch_first=True)
-
-        return Z, Zo.data
+        Zy = nn.utils.rnn.pack_padded_sequence(X, X_len - 1, batch_first=True)
+        return Z, Zy.data
 
 class Model(nn.Module):
-    def __init__(self, input_size, hidden_size=64, z_dim=32):
+    def __init__(self, input_size, hidden_size=256, z_dim=128):
         super(Model, self).__init__()
         self.hidden_size = hidden_size
         self.emb = nn.Embedding(input_size, hidden_size)
@@ -210,7 +207,8 @@ if __name__ == '__main__':
 #%% Init model.
 device = torch.device('cpu')
 model = Model(len(dataset.char_to_ix)).to(device)
-model.load_state_dict(torch.load('models/vae_name_gen.model', map_location=device))
+model.load_state_dict(
+    torch.load('models/vae_name_gen.model', map_location=device))
 model.eval()
 
 
