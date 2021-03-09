@@ -67,7 +67,9 @@ class Model(nn.Module):
     def __init__(self, input_size, hidden_size=256, z_dim=128):
         super(Model, self).__init__()
         self.hidden_size = hidden_size
+        #Embedder.
         self.emb = nn.Embedding(input_size, hidden_size)
+        self.drop = nn.Dropout(0.1)
         #Encoder.
         self.rnn_enc = nn.GRU(hidden_size, hidden_size, batch_first=True,
             bidirectional=True)
@@ -94,22 +96,17 @@ class Model(nn.Module):
         return F.log_softmax(self.lin_o(out.data), dim=1)
 
     def forward(self, x):
-        assert type(x) is torch.nn.utils.rnn.PackedSequence
+        assert type(x) is torch.nn.utils.rnn.PackedSequence, \
+            'Only packed sequence is accepted for training.'
         x = torch.nn.utils.rnn.PackedSequence(
-            data=self.emb(x.data), batch_sizes=x.batch_sizes)
+            data=self.drop(self.emb(x.data)), batch_sizes=x.batch_sizes)
         mu, log_sigma = self._encode(x)
         h = self._sample_z(mu, log_sigma)
         out = self._decode(x, h)
         return out, mu, log_sigma
 
     def encode(self, x):
-        if type(x) is torch.nn.utils.rnn.PackedSequence:
-            x = torch.nn.utils.rnn.PackedSequence(
-                data=self.emb(x.data), batch_sizes=x.batch_sizes)
-        elif type(x) == torch.Tensor:
-            x = self.emb(x)
-        else:
-            raise ValueError('Unknown tensor type.')
+        x = self.emb(x)
         return self._encode(x)[0]
 
     def sample(self, h):
